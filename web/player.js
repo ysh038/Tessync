@@ -4,7 +4,7 @@
   'use strict';
 
   // 앱 번들에 새 플레이어가 들어갔는지 디버그 화면에서 확인하는 용도. 플레이어를 고칠 때마다 올린다.
-  var PLAYER_VERSION = '2026-10-27.3';
+  var PLAYER_VERSION = '2026-10-27.4';
   var params = new URLSearchParams(location.search);
   var WS_PORT = params.get('wsPort') || '8081';
   var CONNECT_TIMEOUT_MS = 3000;
@@ -38,7 +38,7 @@
   var currentOrientation = 1;
   var hasFrame = false;
 
-  var stats = { frames: 0, framesInSecond: 0, fps: 0, decodeErrors: 0, consecutiveErrors: 0, reconnects: 0 };
+  var stats = { frames: 0, framesInSecond: 0, fps: 0, decodeErrors: 0, consecutiveErrors: 0, drops: 0, attempts: 0 };
   var phone = {};
 
   // MARK: 연결
@@ -61,7 +61,6 @@
       if (ws !== socket) return;
       attempts = 0;
       everConnected = true;
-      live = true;
       broadcastEnded = false;
       lastMessageAt = Date.now();
       socket.send(JSON.stringify({
@@ -71,6 +70,8 @@
     socket.onmessage = function (event) {
       if (ws !== socket) return;
       lastMessageAt = Date.now();
+      // 데이터를 실제로 받기 시작해야 "살아 있는 연결"로 본다. 열리기만 하고 아무것도 안 오다 버려진 연결은 끊김으로 세지 않는다.
+      live = true;
       if (typeof event.data === 'string') {
         handleText(event.data);
       } else {
@@ -89,6 +90,7 @@
   function markDisconnected() {
     if (!live) return;
     live = false;
+    stats.drops++;
     disconnectedSince = Date.now();
   }
 
@@ -107,7 +109,7 @@
     if (reconnectTimer) return;
     var delay = attempts < RECONNECT_DELAYS_MS.length ? RECONNECT_DELAYS_MS[attempts] : 1000;
     attempts++;
-    stats.reconnects++;
+    stats.attempts++;
     reconnectTimer = setTimeout(connect, delay);
   }
 
@@ -265,7 +267,8 @@
       '수신 fps  ' + stats.fps,
       '프레임    ' + (current ? current.width + 'x' + current.height + ' o' + currentOrientation : '-'),
       '마지막    ' + age,
-      '재연결    ' + stats.reconnects,
+      '끊김      ' + stats.drops,
+      '접속시도  ' + stats.attempts,
       '디코딩오류 ' + stats.decodeErrors,
       '폰 단계   ' + (phone.lvl !== undefined ? phone.lvl : '-'),
       '폰 fps    ' + (phone.fps !== undefined ? phone.fps : '-'),

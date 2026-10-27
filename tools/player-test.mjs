@@ -44,7 +44,7 @@ async function framesAdvancing() {
   return a !== (await frameCount());
 }
 
-await page.goto(BASE);
+await page.goto(BASE + '/?debug=1');
 
 let ms = await waitFor(overlayHidden, 5000);
 check('첫 화면 표시', ms >= 0, `${ms}ms`);
@@ -95,6 +95,11 @@ await client.send('HeapProfiler.collectGarbage');
 const heapEnd = await heap();
 check('40초 후 힙 증가 5MB 미만', heapEnd - heapStart < 5 * 1024 * 1024, `${(heapStart / 1e6).toFixed(1)}MB -> ${(heapEnd / 1e6).toFixed(1)}MB`);
 check('프레임 계속 진행', await framesAdvancing());
+
+// 일부러 만든 끊김은 강제 끊김, 멈춘 연결, 방송 종료 3번이다. 접속 시도 횟수와 섞이지 않아야 한다.
+const debugText = await page.evaluate(() => document.getElementById('debug').textContent);
+const drops = Number((debugText.match(/끊김\s+(\d+)/) || [])[1]);
+check('끊김 횟수 = 3', drops === 3, debugText.split('\n').filter((l) => /끊김|접속시도/.test(l)).join(', '));
 
 await browser.close();
 if (failures.length) {
