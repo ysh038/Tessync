@@ -17,8 +17,9 @@
 
 static const char* DEVICE_NAME = "Tessync Touch";
 static const uint8_t REPORT_ID = 1;
-// 보고서 사이 간격. 너무 빨리 보내면 iOS가 이동을 합치거나 버린다.
-static const int REPORT_GAP_MS = 8;
+// 보고서 사이 간격. BLE 연결 간격(iOS 최소 15ms)보다 빨리 보내면 전송 버퍼가 차서 일부가 버려진다.
+static const int REPORT_GAP_MS = 15;
+static const int NOTIFY_RETRIES = 10;
 // DevKitC의 BOOT 버튼. 누르면 LOW.
 static const int BOOT_BUTTON_PIN = 0;
 
@@ -36,6 +37,8 @@ static NimBLEHIDDevice* hid = nullptr;
 static NimBLECharacteristic* input = nullptr;
 static volatile bool connected = false;
 static uint8_t buttons = 0;
+// 재시도까지 실패해 버려진 보고서 수. 명령 응답(ok)에 붙여 알린다.
+static int droppedReports = 0;
 
 class ServerCallbacks : public NimBLEServerCallbacks {
   void onConnect(NimBLEServer* server, NimBLEConnInfo& info) override {
@@ -54,8 +57,12 @@ class ServerCallbacks : public NimBLEServerCallbacks {
 static void sendReport(int8_t dx, int8_t dy, int8_t wheel) {
   if (!connected) return;
   uint8_t report[4] = { buttons, (uint8_t)dx, (uint8_t)dy, (uint8_t)wheel };
-  input->setValue(report, sizeof(report));
-  input->notify();
+  bool sent = false;
+  for (int attempt = 0; attempt < NOTIFY_RETRIES && !sent; attempt++) {
+    sent = input->notify(report, sizeof(report));
+    if (!sent) delay(5);
+  }
+  if (!sent) droppedReports++;
   delay(REPORT_GAP_MS);
 }
 
@@ -98,7 +105,8 @@ static void handleCommand(String line) {
     case 'h': move(-5000, -5000); break;
     default: Serial.println("error unknown command"); return;
   }
-  Serial.println("ok");
+  Serial.printf("ok dropped=%d\n", droppedReports);
+  droppedReports = 0;
 }
 
 // BOOT 버튼 시험: 포인터가 왼쪽 위 모서리로 간 뒤 사각형을 그리면 BLE 마우스가 동작하는 것.
