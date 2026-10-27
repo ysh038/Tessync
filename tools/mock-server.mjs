@@ -55,6 +55,10 @@ http.createServer((req, res) => {
     req.on('end', () => { state.reports.push(body); console.log('probe report', body.slice(0, 300)); res.writeHead(204).end(); });
     return;
   }
+  if (url.pathname === '/log') {
+    res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8' });
+    return res.end(`mock log\nconnections=${state.connections}\n${state.reports.join('\n')}`);
+  }
   const file = { '/': 'index.html', '/index.html': 'index.html', '/player.js': 'player.js', '/probe': 'probe.html', '/probe.html': 'probe.html' }[url.pathname];
   if (!file) return res.writeHead(404).end('not found');
   res.writeHead(200, { 'Content-Type': contentTypes[path.extname(file)], 'Cache-Control': 'no-store' });

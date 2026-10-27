@@ -27,6 +27,16 @@ final class DiagnosticsLog {
         }
     }
 
+    /// 최신 로그가 위로 오게 돌려준다. 방송 중 /log 페이지에서 쓴다.
+    func read() -> String {
+        queue.sync {
+            guard let url = Tessync.logURL else { return "" }
+            let previous = (try? String(contentsOf: url.appendingPathExtension("1"), encoding: .utf8)) ?? ""
+            let current = (try? String(contentsOf: url, encoding: .utf8)) ?? ""
+            return (previous + current).split(separator: "\n").reversed().joined(separator: "\n")
+        }
+    }
+
     private func rotateIfNeeded(_ url: URL) {
         let size = (try? FileManager.default.attributesOfItem(atPath: url.path)[.size] as? UInt64) ?? 0
         guard size > maxBytes else { return }

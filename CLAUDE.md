@@ -29,7 +29,8 @@
 
 ## 작업 방법
 
-- 빌드: `xcodegen generate` 후 Xcode로 실기기 실행. `project.yml`의 `BUNDLE_ID_PREFIX`, `DEVELOPMENT_TEAM`을 사용자 값으로 설정해야 한다.
+- 빌드: `xcodegen generate` 후 Xcode로 실기기 실행. `project.yml`의 `BUNDLE_ID_PREFIX`를 사용자 값으로 바꾸고, 두 타깃의 Team을 고른다.
+- 사용자는 **무료 개발자 계정(Personal Team)**이다. App Group을 못 쓰므로 entitlements 없이 빌드하고, 진단 로그는 방송 중 `/log` HTTP 경로로 본다. 앱은 7일마다 재설치가 필요하다.
 - 웹 플레이어를 고치면 `node tools/mock-server.mjs` + `node tools/player-test.mjs`로 끊김 복구 테스트를 돌린다.
 - `web/player.js`는 테슬라 브라우저 버전을 모르므로 옵셔널 체이닝 같은 최신 문법을 쓰지 않는다.
 - 진행 상황은 README의 "현재 상태와 다음 할 일" 체크리스트를 갱신한다.

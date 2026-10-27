@@ -157,6 +157,8 @@ final class MirrorServer {
             serveFile("player.js", type: "text/javascript; charset=utf-8", on: connection)
         case ("GET", "/probe"), ("GET", "/probe.html"):
             serveFile("probe.html", type: "text/html; charset=utf-8", on: connection)
+        case ("GET", "/log"):
+            sendHTTP(connection, status: "200 OK", contentType: "text/plain; charset=utf-8", body: Data(log.read().utf8))
         case ("POST", "/report"):
             log.write("probe report: \(String(decoding: request.body.prefix(16 * 1024), as: UTF8.self))")
             sendHTTP(connection, status: "204 No Content", contentType: nil, body: Data())
