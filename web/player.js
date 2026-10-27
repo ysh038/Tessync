@@ -4,7 +4,7 @@
   'use strict';
 
   // 앱 번들에 새 플레이어가 들어갔는지 디버그 화면에서 확인하는 용도. 플레이어를 고칠 때마다 올린다.
-  var PLAYER_VERSION = '2026-10-27.5';
+  var PLAYER_VERSION = '2026-10-27.6';
   var params = new URLSearchParams(location.search);
   var WS_PORT = params.get('wsPort') || '8081';
   var CONNECT_TIMEOUT_MS = 3000;
@@ -257,7 +257,7 @@
       // 짧은 재연결은 마지막 화면을 유지한 채 조용히 넘어간다.
       setOverlay(null);
     } else if (broadcastEnded) {
-      setOverlay('iPhone 화면 방송이 종료됐어요', 'iPhone에서 Tessync 방송을 다시 시작하면 자동으로 연결됩니다.');
+      setOverlay('iPhone 화면 방송이 종료됐어요', 'iPhone 화면이 잠기면 방송이 꺼집니다(자동 잠금: 안 함 권장). Tessync 방송을 다시 시작하면 자동으로 연결됩니다.');
     } else if (everConnected) {
       setOverlay('다시 연결 중…', 'iPhone 화면이 잠겼거나 핫스팟 연결이 끊겼을 수 있어요.');
     } else {
