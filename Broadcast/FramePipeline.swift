@@ -25,6 +25,8 @@ final class FramePipeline {
 
     private let server: MirrorServer
     private let log: DiagnosticsLog
+    /// 축소 프레임마다 인코딩 큐에서 불린다. 터치 조작이 포인터를 찾는 데 쓴다.
+    var frameObserver: ((CVPixelBuffer, UInt8) -> Void)?
     private let encodeQueue = DispatchQueue(label: "tessync.encode")
     private var monitor: DispatchSourceTimer?
 
@@ -174,6 +176,7 @@ final class FramePipeline {
             }
         }
         guard let scaler, let encoder, let scaled = scaler.scale(source) else { return nil }
+        frameObserver?(scaled, orientation)
         encoder.quality = profile.quality
         return encoder.encode(scaled, timestamp: timestamp, header: [1, orientation])
     }

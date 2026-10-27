@@ -93,7 +93,13 @@ npm i -D playwright && node tools/player-test.mjs
 - [x] 차에서 점검 페이지 실행: Chromium 148, D 기어에서 `<video>`는 멈추고 canvas는 계속 동작(플레이어는 canvas라 영향 없음)
 - [x] 주행 중 미러링 유지 확인 (테슬라의 주행 중 Wi-Fi 끄기 설정을 꺼야 함)
 - [ ] 차에서 미러링 2시간 연속 테스트, 진단 로그 확인
-- [ ] 화질 개선 (H.264/H.265, HTTPS 인증서) 또는 ESP32 터치 조작
+- [x] ESP32 BLE 마우스로 아이폰 포인터 이동, 클릭 (AssistiveTouch)
+- [x] 방송 프레임에서 포인터 찾기, 폐루프 이동 (글자, 아이콘 위 포함)
+- [x] ESP32 Wi-Fi 연결(TCP 8082)과 설정 페이지
+- [x] 아이폰 익스텐션 안에서 터치 조작 동작 (집, 4~8초)
+- [ ] 터치 속도 1~2초로 개선
+- [ ] 차에서 테슬라 화면으로 터치 조작 시험, 가로 화면 지원
+- [ ] 화질 개선 (H.264/H.265, HTTPS 인증서)
 
 ## 프로토콜
 
@@ -103,3 +109,5 @@ npm i -D playwright && node tools/player-test.mjs
 - 브라우저는 3초 동안 아무 메시지도 없으면 연결을 버리고 재접속한다
 - HTTP `/status`: `{"clients","fps","mem","lvl"}`. 메인 앱이 `127.0.0.1`로 물어 방송 상태를 표시한다
 - HTTP `/log`: 진단 로그(최신이 위). 무료 계정에서는 앱이 이 경로로 로그를 읽는다
+- 텍스트(브라우저 → 서버): `{"t":"tap","u","v"}` 터치 조작. u, v는 방송 프레임 기준 0~1. 하트비트의 `touch`(0 없음, 1 블루투스 대기, 2 준비됨)가 2일 때만 보낸다
+- TCP 8082: ESP32(Tessync Touch)가 연결해 오는 줄 단위 명령 통로. 명령은 `firmware/tessync-touch/tessync-touch.ino` 맨 위 주석

@@ -36,6 +36,11 @@
   }
   #debug.on { display: block; }
   #debugToggle { position: fixed; right: 0; top: 0; width: 72px; height: 72px; }
+  .ripple {
+    position: fixed; width: 56px; height: 56px; margin: -28px 0 0 -28px; border-radius: 50%; pointer-events: none;
+    border: 3px solid rgba(255, 255, 255, 0.9); animation: ripple 0.5s ease-out forwards;
+  }
+  @keyframes ripple { from { transform: scale(0.4); opacity: 1; } to { transform: scale(1.2); opacity: 0; } }
   #fullscreen {
     position: fixed; left: 16px; top: 16px; padding: 12px 20px; border: 0; border-radius: 999px;
     background: rgba(26, 33, 37, 0.85); color: var(--text); font: 600 16px var(--font);

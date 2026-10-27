@@ -27,6 +27,8 @@ final class MirrorServer {
 
     let queue = DispatchQueue(label: "tessync.server")
     var statusProvider: (() -> [String: Any])?
+    /// 브라우저에서 화면을 누른 위치(방송 프레임 기준 0~1).
+    var onTap: ((Double, Double) -> Void)?
 
     private let log: DiagnosticsLog
     private let webRoot: URL?
@@ -255,12 +257,21 @@ final class MirrorServer {
                 return
             }
             if metadata?.opcode == .text, let data {
-                log.write("client \(client.id): \(String(decoding: data.prefix(1024), as: UTF8.self))")
+                handleText(data, from: client)
             }
             if error == nil {
                 receiveMessages(from: client)
             }
         }
+    }
+
+    private func handleText(_ data: Data, from client: StreamClient) {
+        let message = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
+        if message?["t"] as? String == "tap", let u = message?["u"] as? Double, let v = message?["v"] as? Double {
+            onTap?(u, v)
+            return
+        }
+        log.write("client \(client.id): \(String(decoding: data.prefix(1024), as: UTF8.self))")
     }
 
     private func send(frame: Data, to client: StreamClient) {

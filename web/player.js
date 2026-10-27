@@ -4,7 +4,7 @@
   'use strict';
 
   // 앱 번들에 새 플레이어가 들어갔는지 디버그 화면에서 확인하는 용도. 플레이어를 고칠 때마다 올린다.
-  var PLAYER_VERSION = '2026-10-27.7';
+  var PLAYER_VERSION = '2026-10-28.1';
   var params = new URLSearchParams(location.search);
   var WS_PORT = params.get('wsPort') || '8081';
   var CONNECT_TIMEOUT_MS = 3000;
@@ -200,6 +200,28 @@
     }
   }
 
+  // 화면에 그린 위치(캔버스 픽셀) → 방송 프레임 기준 0~1 좌표. draw()의 변환을 거꾸로 적용한다.
+  function frameScale(sourceWidth, sourceHeight, sideways) {
+    var shownWidth = sideways ? sourceHeight : sourceWidth;
+    var shownHeight = sideways ? sourceWidth : sourceHeight;
+    return Math.min(canvas.width / shownWidth, canvas.height / shownHeight);
+  }
+
+  function canvasToFrame(clientX, clientY) {
+    if (!current) return null;
+    var rect = canvas.getBoundingClientRect();
+    var px = (clientX - rect.left) * (canvas.width / rect.width) - canvas.width / 2;
+    var py = (clientY - rect.top) * (canvas.height / rect.height) - canvas.height / 2;
+    var angle = rotationFor(currentOrientation);
+    var scale = frameScale(current.width, current.height, angle !== 0 && angle !== Math.PI);
+    var x = (px * Math.cos(angle) + py * Math.sin(angle)) / scale + current.width / 2;
+    var y = (-px * Math.sin(angle) + py * Math.cos(angle)) / scale + current.height / 2;
+    var u = x / current.width;
+    var v = y / current.height;
+    if (u < 0 || u > 1 || v < 0 || v > 1) return null;
+    return { u: u, v: v };
+  }
+
   function draw() {
     resizeCanvas();
     ctx.fillStyle = '#000';
@@ -209,9 +231,7 @@
     var sideways = angle !== 0 && angle !== Math.PI;
     var sourceWidth = current.width;
     var sourceHeight = current.height;
-    var shownWidth = sideways ? sourceHeight : sourceWidth;
-    var shownHeight = sideways ? sourceWidth : sourceHeight;
-    var scale = Math.min(canvas.width / shownWidth, canvas.height / shownHeight);
+    var scale = frameScale(sourceWidth, sourceHeight, sideways);
     ctx.save();
     ctx.translate(canvas.width / 2, canvas.height / 2);
     ctx.rotate(angle);
@@ -283,7 +303,8 @@
       '디코딩오류 ' + stats.decodeErrors,
       '폰 단계   ' + (phone.lvl !== undefined ? phone.lvl : '-'),
       '폰 fps    ' + (phone.fps !== undefined ? phone.fps : '-'),
-      '폰 메모리 ' + (phone.mem !== undefined ? phone.mem + 'MB' : '-')
+      '폰 메모리 ' + (phone.mem !== undefined ? phone.mem + 'MB' : '-'),
+      '터치 장치 ' + (phone.touch === 2 ? '준비됨' : phone.touch === 1 ? '블루투스 대기' : '없음')
     ].join('\n');
   }
 
@@ -306,6 +327,20 @@
       fullscreenButton.hidden = !!document.fullscreenElement;
     });
   }
+
+  // 터치 조작: 터치 장치(ESP32)가 준비돼 있으면 누른 위치를 iPhone에 보낸다. iPhone이 포인터를 옮겨 클릭한다.
+  canvas.addEventListener('click', function (event) {
+    if (phone.touch !== 2 || !ws || ws.readyState !== WebSocket.OPEN) return;
+    var point = canvasToFrame(event.clientX, event.clientY);
+    if (!point) return;
+    ws.send(JSON.stringify({ t: 'tap', u: point.u, v: point.v }));
+    var ripple = document.createElement('div');
+    ripple.className = 'ripple';
+    ripple.style.left = event.clientX + 'px';
+    ripple.style.top = event.clientY + 'px';
+    document.body.appendChild(ripple);
+    setTimeout(function () { document.body.removeChild(ripple); }, 600);
+  });
 
   window.addEventListener('resize', draw);
   document.addEventListener('visibilitychange', function () {
