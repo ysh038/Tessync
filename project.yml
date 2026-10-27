@@ -1,5 +1,14 @@
 # XcodeGen spec. 맥에서 `xcodegen generate`로 Tessync.xcodeproj를 만든다.
 # BUNDLE_ID_PREFIX와 DEVELOPMENT_TEAM을 본인 값으로 바꿔야 한다.
+#
+# 무료 계정(Personal Team)은 App Group을 쓸 수 없어서 기본값은 App Group 없이 빌드한다.
+# 이때 진단 로그는 방송 중 http://<주소>:8080/log 로 본다.
+# 유료 계정이면 두 타깃에 아래 entitlements를 추가하면 앱 안에서 로그를 볼 수 있다.
+#   entitlements:
+#     path: App/Tessync.entitlements   (익스텐션은 Broadcast/TessyncBroadcast.entitlements)
+#     properties:
+#       com.apple.security.application-groups:
+#         - group.$(BUNDLE_ID_PREFIX).tessync
 name: Tessync
 options:
   deploymentTarget:
@@ -31,11 +40,6 @@ targets:
         UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
         NSLocalNetworkUsageDescription: 테슬라 브라우저가 핫스팟을 통해 이 iPhone에 접속하려면 로컬 네트워크 권한이 필요합니다.
         TessyncAppGroup: group.$(BUNDLE_ID_PREFIX).tessync
-    entitlements:
-      path: App/Tessync.entitlements
-      properties:
-        com.apple.security.application-groups:
-          - group.$(BUNDLE_ID_PREFIX).tessync
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: $(BUNDLE_ID_PREFIX).tessync
@@ -58,11 +62,6 @@ targets:
           NSExtensionPointIdentifier: com.apple.broadcast-services-upload
           NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).SampleHandler
           RPBroadcastProcessMode: RPBroadcastProcessModeSampleBuffer
-    entitlements:
-      path: Broadcast/TessyncBroadcast.entitlements
-      properties:
-        com.apple.security.application-groups:
-          - group.$(BUNDLE_ID_PREFIX).tessync
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: $(BUNDLE_ID_PREFIX).tessync.broadcast

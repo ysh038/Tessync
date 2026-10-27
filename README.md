@@ -22,12 +22,15 @@
 
 0. 저장소 받기: `git clone https://github.com/ysh038/Tessync.git && cd Tessync`
 1. `brew install xcodegen`
-2. `project.yml`에서 `BUNDLE_ID_PREFIX`(예: `com.내이름`)와 `DEVELOPMENT_TEAM`(Xcode > Settings > Accounts의 Team ID)을 바꾼다.
+2. `project.yml`에서 `BUNDLE_ID_PREFIX`를 겹치지 않는 값으로 바꾼다(예: `com.ysh038`). `DEVELOPMENT_TEAM`은 빈칸으로 둬도 된다.
 3. `xcodegen generate` 후 `Tessync.xcodeproj`를 연다.
-4. 아이폰을 연결하고 `Tessync` 스킴으로 실행한다. 아이폰에서 설정 > 일반 > VPN 및 기기 관리에서 개발자를 신뢰해야 할 수 있다.
+4. 두 타깃(`Tessync`, `TessyncBroadcast`) 모두 Signing & Capabilities > Team에서 본인 팀(예: "상훈 유 (Personal Team)")을 고른다. `xcodegen generate`를 다시 하면 초기화되므로, 매번 고르기 싫으면 Build Settings에서 `DEVELOPMENT_TEAM` 값(10자리)을 확인해 yml에 적는다.
+5. 아이폰: 설정 > 개인정보 보호 및 보안 > **개발자 모드** 켜기(재부팅됨).
+6. 아이폰을 연결하고 `Tessync` 스킴으로 실행한다. 처음에는 설정 > 일반 > VPN 및 기기 관리에서 개발자를 신뢰해야 한다.
 
 참고:
-- **App Group**은 진단 로그 공유에만 쓴다. 무료 Apple 계정에서 App Group 서명이 안 되면 `project.yml`의 `entitlements` 두 군데를 지우고 다시 생성한다(로그만 비활성화됨). 무료 계정은 7일마다 다시 설치해야 한다.
+- **무료 계정(Personal Team)**: App Group을 못 써서 기본 설정은 App Group 없이 빌드한다. 진단 로그는 방송 중에 아이폰 Safari에서 `http://localhost:8080/log`(또는 테슬라 브라우저에서 `http://172.20.10.1:8080/log`)로 본다. 무료 계정으로 설치한 앱은 7일 뒤 만료되어 다시 설치해야 한다.
+- 유료 계정이면 `project.yml` 맨 위 주석대로 App Group을 추가하면 앱 안에서 로그를 볼 수 있다.
 - **이 코드는 리눅스에서 작성되어 아직 Xcode로 빌드해 보지 않았다.** 컴파일 오류가 나면 오류 메시지를 그대로 알려주면 된다.
 - 첫 접속 때 로컬 네트워크 권한 창이 뜨면 허용한다.
 
@@ -41,7 +44,7 @@
    - "테스트 시작"을 누르고 주행해 본다. 주행 중에 canvas와 video가 멈추는지 확인
 5. 테슬라 브라우저: `http://172.20.10.1:8080` 열기 → 미러링 확인
    - 오른쪽 위 모서리를 누르면 디버그 정보(수신 fps, 재연결 횟수, 폰 메모리)가 보인다
-6. 끊김이 생기면 앱 > 진단 로그를 공유해 준다
+6. 끊김이 생기면 진단 로그(`/log`)를 저장해 둔다
 
 ## iPhone 없이 플레이어 테스트
 

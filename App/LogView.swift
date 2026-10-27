@@ -26,8 +26,14 @@ struct LogView: View {
     }
 
     private func load() {
-        guard let url = Tessync.logURL else {
-            text = "App Group 컨테이너에 접근할 수 없습니다. 서명 설정을 확인하세요."
+        guard Tessync.sharedContainer != nil, let url = Tessync.logURL else {
+            text = """
+            무료 개발자 계정에서는 앱이 방송 로그를 직접 읽을 수 없습니다.
+            방송 중에 Safari나 테슬라 브라우저에서 아래 주소를 여세요.
+
+            http://localhost:\(Tessync.httpPort)/log  (이 iPhone의 Safari)
+            http://\(Tessync.fallbackHotspotAddress):\(Tessync.httpPort)/log  (테슬라 브라우저)
+            """
             return
         }
         let previous = (try? String(contentsOf: url.appendingPathExtension("1"), encoding: .utf8)) ?? ""

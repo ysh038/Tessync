@@ -14,7 +14,9 @@ enum Tessync {
         FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: appGroupID)
     }
 
+    /// App Group이 있으면 앱과 익스텐션이 같이 보는 위치, 없으면(무료 계정) 각자의 캐시 폴더.
     static var logURL: URL? {
-        sharedContainer?.appendingPathComponent("broadcast.log")
+        let directory = sharedContainer ?? FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first
+        return directory?.appendingPathComponent("broadcast.log")
     }
 }
