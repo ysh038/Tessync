@@ -3,6 +3,8 @@
 (function () {
   'use strict';
 
+  // 앱 번들에 새 플레이어가 들어갔는지 디버그 화면에서 확인하는 용도. 플레이어를 고칠 때마다 올린다.
+  var PLAYER_VERSION = '2026-10-27.2';
   var params = new URLSearchParams(location.search);
   var WS_PORT = params.get('wsPort') || '8081';
   var CONNECT_TIMEOUT_MS = 3000;
@@ -259,6 +261,7 @@
     if (!debugEl.classList.contains('on')) return;
     var age = lastMessageAt ? ((Date.now() - lastMessageAt) / 1000).toFixed(1) + 's' : '-';
     debugEl.textContent = [
+      '플레이어  ' + PLAYER_VERSION,
       '수신 fps  ' + stats.fps,
       '프레임    ' + (current ? current.width + 'x' + current.height + ' o' + currentOrientation : '-'),
       '마지막    ' + age,
