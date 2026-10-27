@@ -14,9 +14,21 @@ enum HotspotAddress {
     struct InterfaceAddress: Hashable {
         let interface: String
         let address: String
+
+        /// 테슬라 브라우저가 막는다고 알려진 사설 IPv4 대역(10/8, 172.16/12, 192.168/16)인지.
+        var isPrivateIPv4: Bool {
+            let parts = address.split(separator: ".").compactMap { Int($0) }
+            guard parts.count == 4 else { return false }
+            return parts[0] == 10
+                || (parts[0] == 172 && (16...31).contains(parts[1]))
+                || (parts[0] == 192 && parts[1] == 168)
+        }
+
+        var isIPv6: Bool { address.contains(":") }
     }
 
-    /// 핫스팟/Wi-Fi 쪽 인터페이스의 모든 주소(IPv4, IPv6). 테슬라가 어떤 주소로 이 iPhone에 닿을 수 있는지 진단용.
+    /// 이 iPhone의 모든 주소(핫스팟, Wi-Fi, 셀룰러 포함). 테슬라가 어떤 주소로 이 iPhone에 닿을 수 있는지 진단용.
+    /// 셀룰러(pdp_ip) 주소도 넣는다: 핫스팟 기기가 iPhone 자신의 셀룰러 주소로 보내도 iPhone이 받아줄 수 있다.
     static func allAddresses() -> [InterfaceAddress] {
         var list: UnsafeMutablePointer<ifaddrs>?
         guard getifaddrs(&list) == 0, let first = list else { return [] }
@@ -29,10 +41,13 @@ enum HotspotAddress {
             let family = Int32(address.pointee.sa_family)
             guard family == AF_INET || family == AF_INET6 else { continue }
             let name = String(cString: interface.ifa_name)
-            guard name.hasPrefix("bridge") || name == "en0" || name.hasPrefix("ap") else { continue }
+            guard name != "lo0", !name.hasPrefix("utun"), !name.hasPrefix("llw"), !name.hasPrefix("awdl") else { continue }
             var host = [CChar](repeating: 0, count: Int(NI_MAXHOST))
             if getnameinfo(address, socklen_t(address.pointee.sa_len), &host, socklen_t(host.count), nil, 0, NI_NUMERICHOST) == 0 {
-                let value = InterfaceAddress(interface: name, address: String(cString: host))
+                let text = String(cString: host)
+                // 링크 로컬 IPv6(fe80::)는 브라우저 주소로 쓸 수 없어서 뺀다.
+                if text.lowercased().hasPrefix("fe80") { continue }
+                let value = InterfaceAddress(interface: name, address: text)
                 if !result.contains(value) { result.append(value) }
             }
         }

@@ -217,7 +217,7 @@ struct ContentView: View {
             Text("네트워크 정보")
                 .font(.system(size: 17, weight: .bold))
                 .foregroundStyle(Theme.textPrimary)
-            Text("테슬라가 연결된 상태에서 이 목록을 캡처해 주세요. 연결 문제를 찾는 데 써요.")
+            Text("테슬라를 연결하고 방송을 켠 상태에서 캡처해 주세요. 테슬라 브라우저는 사설 주소를 막을 수 있어서, '시도' 표시가 붙은 주소에 :8080을 붙여 열어보세요.")
                 .font(.system(size: 13))
                 .foregroundStyle(Theme.textSecondary)
             if status.interfaceAddresses.isEmpty {
@@ -236,10 +236,19 @@ struct ContentView: View {
                         .foregroundStyle(Theme.textPrimary)
                         .textSelection(.enabled)
                         .fixedSize(horizontal: false, vertical: true)
+                    Spacer(minLength: 0)
+                    Text(addressTag(item))
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(item.isPrivateIPv4 ? Theme.textTertiary : Theme.positive)
                 }
             }
         }
         .card()
+    }
+
+    private func addressTag(_ item: HotspotAddress.InterfaceAddress) -> String {
+        if item.isIPv6 { return "IPv6" }
+        return item.isPrivateIPv4 ? "사설" : "시도"
     }
 
     // MARK: - 하단 버튼
