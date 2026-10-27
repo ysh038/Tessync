@@ -4,7 +4,7 @@
   'use strict';
 
   // 앱 번들에 새 플레이어가 들어갔는지 디버그 화면에서 확인하는 용도. 플레이어를 고칠 때마다 올린다.
-  var PLAYER_VERSION = '2026-10-27.2';
+  var PLAYER_VERSION = '2026-10-27.3';
   var params = new URLSearchParams(location.search);
   var WS_PORT = params.get('wsPort') || '8081';
   var CONNECT_TIMEOUT_MS = 3000;
@@ -303,6 +303,9 @@
       connect();
     }
   });
+
+  // 주소 뒤에 ?debug=1 을 붙이면 디버그 정보를 처음부터 보여준다.
+  if (params.get('debug')) debugEl.classList.add('on');
 
   setInterval(tick, 250);
   setInterval(updateDebug, 1000);
