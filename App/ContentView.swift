@@ -123,7 +123,7 @@ struct ContentView: View {
     }
 
     private func stepState(_ step: StatusModel.Stage) -> StepRow.Progress {
-        if status.stage.rawValue > step.rawValue { return .done }
+        if status.isDone(step) { return .done }
         if status.stage == step { return .current }
         return .todo
     }

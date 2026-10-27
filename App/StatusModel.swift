@@ -35,11 +35,25 @@ final class StatusModel: ObservableObject {
 
     var playerURL: String { "http://\(playerAddress)" }
 
+    /// 핫스팟에 기기가 붙었거나(테슬라인지는 iOS가 알려주지 않는다) 집 Wi-Fi에 연결된 상태.
+    var hasNetwork: Bool { hotspotAddress != nil || wifiAddress != nil }
+
+    /// 지금 사용자가 해야 할 단계. 방송을 먼저 켜도 핫스팟이 없으면 핫스팟 단계로 안내한다.
     var stage: Stage {
         if viewerCount > 0 { return .mirroring }
-        if isBroadcasting { return .openBrowser }
-        if hotspotAddress != nil || wifiAddress != nil { return .startBroadcast }
-        return .connectHotspot
+        if !hasNetwork { return .connectHotspot }
+        if !isBroadcasting { return .startBroadcast }
+        return .openBrowser
+    }
+
+    /// 각 단계가 실제로 끝났는지. 순서와 상관없이 현재 상태로 판단한다.
+    func isDone(_ step: Stage) -> Bool {
+        switch step {
+        case .connectHotspot: return hasNetwork
+        case .startBroadcast: return isBroadcasting
+        case .openBrowser: return viewerCount > 0
+        case .mirroring: return false
+        }
     }
 
     func start() {
