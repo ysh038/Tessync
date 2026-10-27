@@ -71,7 +71,7 @@ check('방송 종료 안내 표시', ms >= 0, `overlay="${await overlayText()}"`
 ms = await waitFor(async () => (await overlayHidden()) && (await framesAdvancing()), 6000);
 check('종료 후 다시 연결', ms >= 0, `${ms}ms`);
 
-// 4. 방향: orientation 6(시계방향 90도)이면 세로 프레임이 가로로 그려지고, 위쪽 빨간 띠가 오른쪽으로 간다
+// 4. 방향: orientation 6(반시계방향 90도)이면 세로 프레임이 가로로 그려지고, 위쪽 빨간 띠가 왼쪽으로 간다
 await mock('/mock/orientation?o=6');
 await sleep(500);
 const rotated = await page.evaluate(() => {
@@ -82,7 +82,7 @@ const rotated = await page.evaluate(() => {
   return { right: Array.from(right), left: Array.from(left) };
 });
 const isRed = ([r, g, b]) => r > 180 && g < 80 && b < 80;
-check('방향 회전 (빨간 띠가 오른쪽)', isRed(rotated.right) && !isRed(rotated.left), JSON.stringify(rotated));
+check('방향 회전 (빨간 띠가 왼쪽)', isRed(rotated.left) && !isRed(rotated.right), JSON.stringify(rotated));
 await mock('/mock/orientation?o=1');
 
 // 5. 장시간 메모리: 40초 동안 JS 힙이 계속 늘지 않아야 한다

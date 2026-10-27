@@ -183,12 +183,13 @@
     }
   }
 
-  // EXIF orientation: 1=그대로, 3=180도, 6=시계방향 90도, 8=반시계방향 90도
+  // ReplayKit orientation 값(CGImagePropertyOrientation): 1=그대로, 3=180도.
+  // 6과 8은 EXIF 표시 규칙과 반대로 돌려야 맞게 보인다(실기기 확인): 6=반시계방향 90도, 8=시계방향 90도
   function rotationFor(orientation) {
     switch (orientation) {
       case 3: case 4: return Math.PI;
-      case 5: case 6: return Math.PI / 2;
-      case 7: case 8: return -Math.PI / 2;
+      case 5: case 6: return -Math.PI / 2;
+      case 7: case 8: return Math.PI / 2;
       default: return 0;
     }
   }
