@@ -8,4 +8,5 @@ App/Info.plist
 Broadcast/Info.plist
 *.entitlements
 firmware/*/bin/
+firmware/*/build/
 __pycache__/
