@@ -3,6 +3,7 @@ import SwiftUI
 struct ContentView: View {
     @StateObject private var picker = BroadcastPicker()
     @State private var hotspotAddress: String?
+    @State private var wifiAddress: String?
     @State private var lowPowerMode = ProcessInfo.processInfo.isLowPowerModeEnabled
     private let refresh = Timer.publish(every: 2, on: .main, in: .common).autoconnect()
 
@@ -25,6 +26,12 @@ struct ContentView: View {
                             Text("핫스팟에 연결된 기기가 아직 없습니다. 테슬라 Wi-Fi를 이 iPhone 핫스팟에 연결하세요.")
                                 .font(.footnote)
                                 .foregroundStyle(.orange)
+                        }
+                        if let wifiAddress {
+                            Text("집 테스트: 같은 Wi-Fi의 컴퓨터 브라우저에서 http://\(wifiAddress):\(Tessync.httpPort)")
+                                .font(.footnote)
+                                .foregroundStyle(.secondary)
+                                .textSelection(.enabled)
                         }
                     }
                     .padding(.vertical, 4)
@@ -78,6 +85,7 @@ struct ContentView: View {
 
     private func update() {
         hotspotAddress = HotspotAddress.current()
+        wifiAddress = HotspotAddress.wifi()
         lowPowerMode = ProcessInfo.processInfo.isLowPowerModeEnabled
     }
 }
