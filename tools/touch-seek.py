@@ -135,6 +135,19 @@ def settled_position(after, near=None):
     return find_pointer(latest["frame"], near) if latest["frame"] else None
 
 
+# 큰 이동은 대각선 한 번에 보내면 iOS 가속이 보고서 크기마다 달라져 예측이 안 된다(예상의 75%만 가기도 함).
+# 축별로 같은 크기(60) 걸음으로 보내면 1당 약 0.98px로 일정하다.
+COARSE_STEP = 60
+COARSE_PX_PER_UNIT = 0.98
+COARSE_MIN_PX = 40
+
+
+def move_command(dx, dy):
+    if max(abs(dx), abs(dy)) >= COARSE_MIN_PX:
+        return f"g {round(dx / COARSE_PX_PER_UNIT)} {round(dy / COARSE_PX_PER_UNIT)} {COARSE_STEP}"
+    return f"m {units(dx)} {units(dy)}"
+
+
 def units(px):
     scale = next(value for limit, value in PX_PER_UNIT if abs(px) < limit)
     return round(px / scale)
@@ -155,14 +168,17 @@ def seek(target):
         if abs(dx) <= TOLERANCE_PX and abs(dy) <= TOLERANCE_PX:
             return True, f"도착 {pos[0]:.0f},{pos[1]:.0f} 오차 {dx:+.1f},{dy:+.1f} round={round_ - 1} {time.time() - started:.2f}s"
         sent = time.time()
-        board(f"m {units(dx)} {units(dy)}")
+        command = move_command(dx, dy)
+        board(command)
         expected = (pos[0] + dx, pos[1] + dy)
         if VERBOSE:
-            print(f"    {pos[0]:.1f},{pos[1]:.1f} 오차 {dx:+.1f},{dy:+.1f} -> m {units(dx)} {units(dy)}", flush=True)
+            print(f"    {pos[0]:.1f},{pos[1]:.1f} 오차 {dx:+.1f},{dy:+.1f} -> {command}", flush=True)
         pos = settled_position(sent, near=expected)
-        if pos is None or abs(pos[0] - expected[0]) > 120 or abs(pos[1] - expected[1]) > 120:
+        # 크게(특히 대각선으로) 움직이면 예상의 75% 정도만 가기도 한다. 이동 거리에 비례해 오차를 허용한다.
+        slack = max(110, 0.4 * max(abs(dx), abs(dy)))
+        if pos is None or abs(pos[0] - expected[0]) > slack or abs(pos[1] - expected[1]) > slack:
             # 글자나 아이콘 위라 색으로 못 찾으면(또는 엉뚱한 회색 원을 잡으면) 비켜놓기로 찾는다.
-            pos = find_pointer_by_wiggle(expected)
+            pos = find_pointer_by_wiggle(expected, window=int(slack))
     if pos and abs(target[0] - pos[0]) <= TOLERANCE_PX and abs(target[1] - pos[1]) <= TOLERANCE_PX:
         return True, f"도착 {pos[0]:.0f},{pos[1]:.0f} round={MAX_ROUNDS} {time.time() - started:.2f}s"
     return False, f"수렴 실패 {pos} {time.time() - started:.2f}s"
