@@ -21,8 +21,8 @@
 
 ## 확인 안 된 것 (실기기에서 먼저 볼 것)
 
-- **Swift 코드는 아직 한 번도 빌드되지 않았다.** 리눅스에서 작성했다.
-- 방송 익스텐션에서 `VTCompressionSession` + `kCMVideoCodecType_JPEG`(하드웨어 JPEG)가 동작하는지
+- (확인됨) 맥에서 빌드 성공, 실기기에서 서버 시작과 하드웨어 JPEG 인코딩 동작, 익스텐션 메모리 약 7MB.
+- 브라우저 접속 후 실제 미러링 화면, fps, 지연
 - 로컬 네트워크 권한이 들어오는 연결에도 필요한지
 - ReplayKit orientation 값(EXIF 1/3/6/8)에 따른 회전 방향이 맞는지
 - 테슬라 브라우저: Chromium 버전, 주행 중 `<video>`/canvas 재생 차단 여부, D 기어 전환 시 Wi-Fi 유지 여부 (`/probe` 페이지로 확인)
