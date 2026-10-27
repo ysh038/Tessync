@@ -1,0 +1,35 @@
+# Tessync 작업 맥락
+
+아이폰 화면을 테슬라 내장 브라우저로 미러링하는 iOS 앱. 사용자는 iPhone 14 Pro(라이트닝)와 맥을 쓰고, 한국어로 소통한다. 기존에 쓰던 유료 앱 FluxCast가 주기적으로 끊겨서, **끊기지 않는 것**이 최우선 목표다.
+
+## 지금까지 정한 것
+
+- 테슬라에는 차량용 앱스토어/SDK가 없다. 외부 화면을 띄울 통로는 내장 브라우저뿐이다.
+- 안드로이드 Tesor 같은 "차 화면과 폰 화면 분리"는 iOS 앱만으로 불가능하다(가상 디스플레이 API 없음). 그래서 FluxCast 같은 화면 미러링으로 간다. 근거: `docs/research/02-tesor-on-ios.md`
+- 구조: ReplayKit 방송 익스텐션 안에서 캡처, 하드웨어 JPEG 인코딩, HTTP(8080) + WebSocket(8081) 서버를 모두 돌린다. 테슬라 브라우저는 `http://172.20.10.1:8080`에서 canvas로 그린다. 설계: `docs/design/01-architecture.md`
+- v1은 MJPEG. 프레임이 독립적이라 끊김에 강하다. H.264/H.265는 WebCodecs가 HTTPS(보안 컨텍스트)를 요구해서 인증서 체계가 필요하므로 나중으로 미뤘다.
+- 오디오는 미러링하지 않는다(블루투스로 나옴). 터치는 iOS가 막으므로 앱만으로는 보기 전용이다.
+- 터치 조작은 ESP32를 블루투스 마우스로 만들고 아이폰 AssistiveTouch로 받는 방식으로 하기로 했다. 사용자는 ESP32 DevKitC V4(오리지널 ESP32, 2.4GHz Wi-Fi만 지원)를 산다. 근거: `docs/design/02-touch-control.md`
+
+## 끊김 대책 (코드 수정 시 유지할 것)
+
+- 익스텐션 메모리 한도는 약 50MB. 프레임을 쌓지 않는다: 동시 인코딩 1개, 전송 대기 최대 2개, 밀리면 인코딩 생략.
+- 메모리/발열/전송 지연에 따라 `FramePipeline.profiles` 4단계를 자동 조절한다.
+- 서버는 1초마다 하트비트를 보낸다. 핫스팟이 90초 무통신 기기를 끊는 것도 이걸로 막는다.
+- 플레이어는 3초 무응답이면 연결을 버리고 즉시 재접속한다. 새 접속에는 마지막 프레임을 바로 보낸다.
+- 화면 잠금 시 iOS가 방송을 강제로 끝내는 것은 막을 수 없다. 자동 잠금 "안 함"을 안내한다.
+
+## 확인 안 된 것 (실기기에서 먼저 볼 것)
+
+- **Swift 코드는 아직 한 번도 빌드되지 않았다.** 리눅스에서 작성했다.
+- 방송 익스텐션에서 `VTCompressionSession` + `kCMVideoCodecType_JPEG`(하드웨어 JPEG)가 동작하는지
+- 로컬 네트워크 권한이 들어오는 연결에도 필요한지
+- ReplayKit orientation 값(EXIF 1/3/6/8)에 따른 회전 방향이 맞는지
+- 테슬라 브라우저: Chromium 버전, 주행 중 `<video>`/canvas 재생 차단 여부, D 기어 전환 시 Wi-Fi 유지 여부 (`/probe` 페이지로 확인)
+
+## 작업 방법
+
+- 빌드: `xcodegen generate` 후 Xcode로 실기기 실행. `project.yml`의 `BUNDLE_ID_PREFIX`, `DEVELOPMENT_TEAM`을 사용자 값으로 설정해야 한다.
+- 웹 플레이어를 고치면 `node tools/mock-server.mjs` + `node tools/player-test.mjs`로 끊김 복구 테스트를 돌린다.
+- `web/player.js`는 테슬라 브라우저 버전을 모르므로 옵셔널 체이닝 같은 최신 문법을 쓰지 않는다.
+- 진행 상황은 README의 "현재 상태와 다음 할 일" 체크리스트를 갱신한다.

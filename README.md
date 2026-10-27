@@ -20,6 +20,7 @@
 
 ## 맥에서 빌드
 
+0. 저장소 받기: `git clone https://github.com/ysh038/Tessync.git && cd Tessync`
 1. `brew install xcodegen`
 2. `project.yml`에서 `BUNDLE_ID_PREFIX`(예: `com.내이름`)와 `DEVELOPMENT_TEAM`(Xcode > Settings > Accounts의 Team ID)을 바꾼다.
 3. `xcodegen generate` 후 `Tessync.xcodeproj`를 연다.
@@ -53,6 +54,17 @@ npm i -D playwright && node tools/player-test.mjs
 ```
 
 `player-test.mjs`는 강제 끊김, 멈춘 연결, 방송 종료, 화면 회전, 40초 메모리 증가를 확인한다.
+
+## 현재 상태와 다음 할 일
+
+- [x] 사전조사, 설계, 터치 조작 조사
+- [x] MVP 코드 작성 (iOS 앱 + 방송 익스텐션 + 웹 플레이어)
+- [x] 웹 플레이어 끊김 복구 자동 테스트 통과 (리눅스 Chromium)
+- [ ] **맥에서 첫 빌드** (아직 Xcode로 빌드해 본 적 없음)
+- [ ] 아이폰 실기기에서 방송 시작, 하드웨어 JPEG 인코더 동작 확인
+- [ ] 차에서 점검 페이지 실행 (Chromium 버전, 주행 중 재생 여부, D 기어 전환 시 Wi-Fi 유지)
+- [ ] 차에서 미러링 2시간 연속 테스트, 진단 로그 확인
+- [ ] 화질 개선 (H.264/H.265, HTTPS 인증서) 또는 ESP32 터치 조작
 
 ## 프로토콜
 
