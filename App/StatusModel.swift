@@ -22,6 +22,7 @@ final class StatusModel: ObservableObject {
     @Published private(set) var wifiAddress: String?
     @Published private(set) var lowPowerMode = false
     @Published private(set) var server: ServerStatus?
+    @Published private(set) var interfaceAddresses: [HotspotAddress.InterfaceAddress] = []
 
     private var timer: Timer?
 
@@ -72,6 +73,7 @@ final class StatusModel: ObservableObject {
     func refresh() {
         hotspotAddress = HotspotAddress.current()
         wifiAddress = HotspotAddress.wifi()
+        interfaceAddresses = HotspotAddress.allAddresses()
         lowPowerMode = ProcessInfo.processInfo.isLowPowerModeEnabled
         Task {
             server = await Self.fetchServerStatus()

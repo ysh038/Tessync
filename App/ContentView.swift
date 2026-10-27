@@ -26,6 +26,7 @@ struct ContentView: View {
                         }
                         tipsCard
                         toolsCard
+                        networkCard
                         Text("운전 중 영상 시청은 도로교통법 위반입니다. 내비게이션 용도로만 사용하세요.")
                             .font(.system(size: 12))
                             .foregroundStyle(Theme.textTertiary)
@@ -208,6 +209,37 @@ struct ContentView: View {
         .padding(.vertical, 8)
         .background(Theme.card)
         .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
+    }
+
+    /// 차에서 연결이 안 될 때 원인을 찾기 위한 진단 정보. 테슬라 브라우저는 사설 IP(172.16~31.x 등)를 막는다는 보고가 있다.
+    private var networkCard: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("네트워크 정보")
+                .font(.system(size: 17, weight: .bold))
+                .foregroundStyle(Theme.textPrimary)
+            Text("테슬라가 연결된 상태에서 이 목록을 캡처해 주세요. 연결 문제를 찾는 데 써요.")
+                .font(.system(size: 13))
+                .foregroundStyle(Theme.textSecondary)
+            if status.interfaceAddresses.isEmpty {
+                Text("표시할 주소가 없어요")
+                    .font(.system(size: 13))
+                    .foregroundStyle(Theme.textTertiary)
+            }
+            ForEach(status.interfaceAddresses, id: \.self) { item in
+                HStack(alignment: .firstTextBaseline, spacing: 10) {
+                    Text(item.interface)
+                        .font(.system(size: 12, weight: .semibold, design: .monospaced))
+                        .foregroundStyle(Theme.sage)
+                        .frame(width: 64, alignment: .leading)
+                    Text(item.address)
+                        .font(.system(size: 12, design: .monospaced))
+                        .foregroundStyle(Theme.textPrimary)
+                        .textSelection(.enabled)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+        }
+        .card()
     }
 
     // MARK: - 하단 버튼
