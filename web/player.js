@@ -4,7 +4,7 @@
   'use strict';
 
   // 앱 번들에 새 플레이어가 들어갔는지 디버그 화면에서 확인하는 용도. 플레이어를 고칠 때마다 올린다.
-  var PLAYER_VERSION = '2026-10-27.4';
+  var PLAYER_VERSION = '2026-10-27.5';
   var params = new URLSearchParams(location.search);
   var WS_PORT = params.get('wsPort') || '8081';
   var CONNECT_TIMEOUT_MS = 3000;
@@ -30,6 +30,7 @@
   var live = false;
   var disconnectedSince = Date.now();
   var lastMessageAt = 0;
+  var lastTickAt = Date.now();
   var broadcastEnded = false;
 
   var pending = null;
@@ -232,6 +233,13 @@
 
   function tick() {
     var now = Date.now();
+    // 화면이 꺼지거나 탭이 뒤로 가면 브라우저가 페이지를 멈춘다. 깨어난 직후에는 밀린 메시지가 아직
+    // 처리되지 않아 "무응답"처럼 보이므로, 이번 한 번은 끊김으로 판단하지 않고 시간을 다시 잰다.
+    if (now - lastTickAt > 1500) {
+      lastMessageAt = now;
+      wsStartedAt = now;
+    }
+    lastTickAt = now;
     var open = ws && ws.readyState === WebSocket.OPEN;
 
     if (ws && ws.readyState === WebSocket.CONNECTING && now - wsStartedAt > CONNECT_TIMEOUT_MS) {

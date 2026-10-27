@@ -85,13 +85,23 @@ const isRed = ([r, g, b]) => r > 180 && g < 80 && b < 80;
 check('방향 회전 (빨간 띠가 왼쪽)', isRed(rotated.left) && !isRed(rotated.right), JSON.stringify(rotated));
 await mock('/mock/orientation?o=1');
 
-// 5. 장시간 메모리: 40초 동안 JS 힙이 계속 늘지 않아야 한다
+// 5. 페이지 일시정지(맥 화면 꺼짐, 탭 숨김): 깨어난 뒤 멀쩡한 연결을 끊으면 안 된다
+const dropsNow = async () => Number(((await page.evaluate(() => document.getElementById('debug').textContent)).match(/끊김\s+(\d+)/) || [])[1]);
+const dropsBeforeFreeze = await dropsNow();
+const cdp = await page.context().newCDPSession(page);
+await cdp.send('Page.setWebLifecycleState', { state: 'frozen' });
+await sleep(6000);
+await cdp.send('Page.setWebLifecycleState', { state: 'active' });
+await sleep(1500);
+check('일시정지 후 끊김으로 오판하지 않음', (await dropsNow()) === dropsBeforeFreeze, `끊김 ${dropsBeforeFreeze} -> ${await dropsNow()}`);
+check('일시정지 후 화면 계속 진행', await framesAdvancing());
+
+// 6. 장시간 메모리: 40초 동안 JS 힙이 계속 늘지 않아야 한다
 const heap = () => page.evaluate(() => (performance.memory ? performance.memory.usedJSHeapSize : 0));
-const client = await page.context().newCDPSession(page);
-await client.send('HeapProfiler.collectGarbage');
+await cdp.send('HeapProfiler.collectGarbage');
 const heapStart = await heap();
 await sleep(40000);
-await client.send('HeapProfiler.collectGarbage');
+await cdp.send('HeapProfiler.collectGarbage');
 const heapEnd = await heap();
 check('40초 후 힙 증가 5MB 미만', heapEnd - heapStart < 5 * 1024 * 1024, `${(heapStart / 1e6).toFixed(1)}MB -> ${(heapEnd / 1e6).toFixed(1)}MB`);
 check('프레임 계속 진행', await framesAdvancing());

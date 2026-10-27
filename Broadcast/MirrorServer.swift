@@ -7,6 +7,7 @@ import Network
 ///
 /// 프레임 패킷: [0]=1(JPEG) [1]=EXIF orientation(1~8) [2...]=JPEG 데이터
 /// 텍스트 메시지: {"t":"hb",...} 1초마다, {"t":"bye","reason":...} 종료 시
+/// 여러 브라우저가 동시에 붙을 수 있다(최대 maxClients).
 final class MirrorServer {
     enum FrameDemand {
         /// 접속한 브라우저가 있고 전송 여유가 있음
@@ -18,6 +19,11 @@ final class MirrorServer {
     }
 
     static let maxInFlightFrames = 2
+    /// 테슬라 브라우저 탭 두 개, 점검 페이지 등 여러 화면이 동시에 붙을 수 있다.
+    /// 하나만 받으면 서로 쫓아내며 재접속을 반복한다(실기기에서 확인).
+    static let maxClients = 4
+    /// 전송이 이 시간 이상 막혀 있으면 죽은 연결로 보고 닫는다.
+    static let stalledTimeout: TimeInterval = 5
 
     let queue = DispatchQueue(label: "tessync.server")
     var statusProvider: (() -> [String: Any])?
@@ -26,7 +32,7 @@ final class MirrorServer {
     private let webRoot: URL?
     private var httpListener: NWListener?
     private var streamListener: NWListener?
-    private var client: StreamClient?
+    private var clients: [StreamClient] = []
     private var heartbeat: DispatchSourceTimer?
     private var heartbeatSeq = 0
     private var lastFrame: Data?
@@ -67,23 +73,26 @@ final class MirrorServer {
             heartbeat?.cancel()
             httpListener?.cancel()
             streamListener?.cancel()
-            if let client, client.isReady {
-                // 브라우저가 "방송 종료"를 바로 표시할 수 있게 알린 뒤 닫는다.
-                let connection = client.connection
-                sendText(["t": "bye", "reason": reason], to: client) { connection.cancel() }
-            } else {
-                client?.connection.cancel()
+            for client in clients {
+                if client.isReady {
+                    // 브라우저가 "방송 종료"를 바로 표시할 수 있게 알린 뒤 닫는다.
+                    let connection = client.connection
+                    sendText(["t": "bye", "reason": reason], to: client) { connection.cancel() }
+                } else {
+                    client.connection.cancel()
+                }
             }
-            client = nil
+            clients.removeAll()
         }
     }
 
-    /// 인코딩된 프레임을 넘겨받아 현재 클라이언트에 보낸다.
+    /// 인코딩된 프레임을 넘겨받아 여유가 있는 클라이언트에 보낸다. 밀린 클라이언트는 이번 프레임을 건너뛴다.
     func publish(frame: Data) {
         queue.async { [self] in
             lastFrame = frame
-            guard let client, client.isReady, client.inFlight < Self.maxInFlightFrames else { return }
-            send(frame: frame, to: client)
+            for client in clients where client.isReady && client.inFlight < Self.maxInFlightFrames {
+                send(frame: frame, to: client)
+            }
         }
     }
 
@@ -188,12 +197,12 @@ final class MirrorServer {
 
     private func acceptStream(_ connection: NWConnection) {
         let newClient = StreamClient(connection: connection)
-        if let old = client {
-            // 테슬라 브라우저가 재접속하면 이전 연결은 이미 죽어 있는 경우가 많다. 최신 접속만 유지한다.
-            log.write("client \(old.id) replaced by \(newClient.id)")
-            old.connection.cancel()
+        if clients.count >= Self.maxClients, let oldest = clients.first {
+            log.write("client \(oldest.id) closed: too many clients")
+            oldest.connection.cancel()
+            clients.removeFirst()
         }
-        client = newClient
+        clients.append(newClient)
         updateDemand()
 
         connection.stateUpdateHandler = { [weak self, weak newClient] state in
@@ -201,8 +210,8 @@ final class MirrorServer {
             switch state {
             case .ready:
                 newClient.isReady = true
-                log.write("client \(newClient.id) connected from \(connection.endpoint)")
-                if client === newClient, let lastFrame {
+                log.write("client \(newClient.id) connected from \(connection.endpoint) (\(clients.count) open)")
+                if let lastFrame {
                     send(frame: lastFrame, to: newClient)
                 }
                 updateDemand()
@@ -221,9 +230,9 @@ final class MirrorServer {
 
     private func drop(_ dropped: StreamClient) {
         dropped.isReady = false
-        if client === dropped {
-            log.write("client \(dropped.id) disconnected")
-            client = nil
+        if let index = clients.firstIndex(where: { $0 === dropped }) {
+            clients.remove(at: index)
+            log.write("client \(dropped.id) disconnected (\(clients.count) open)")
         }
         updateDemand()
     }
@@ -247,12 +256,18 @@ final class MirrorServer {
 
     private func send(frame: Data, to client: StreamClient) {
         client.inFlight += 1
+        if client.inFlight >= Self.maxInFlightFrames, client.blockedSince == nil {
+            client.blockedSince = Date()
+        }
         updateDemand()
         let metadata = NWProtocolWebSocket.Metadata(opcode: .binary)
         let context = NWConnection.ContentContext(identifier: "frame", metadata: [metadata])
         client.connection.send(content: frame, contentContext: context, isComplete: true, completion: .contentProcessed { [weak self, weak client] _ in
             guard let self, let client else { return }
             client.inFlight -= 1
+            if client.inFlight < Self.maxInFlightFrames {
+                client.blockedSince = nil
+            }
             updateDemand()
         })
     }
@@ -264,12 +279,16 @@ final class MirrorServer {
         client.connection.send(content: data, contentContext: context, isComplete: true, completion: .contentProcessed { _ in completion?() })
     }
 
+    /// 여유 있는 클라이언트가 하나라도 있으면 인코딩한다. 모두 밀려 있을 때만 쉰다.
     private func updateDemand() {
+        let ready = clients.filter { $0.isReady }
         let demand: FrameDemand
-        if let client, client.isReady {
-            demand = client.inFlight < Self.maxInFlightFrames ? .live : .none
-        } else {
+        if ready.isEmpty {
             demand = .idle
+        } else if ready.contains(where: { $0.inFlight < Self.maxInFlightFrames }) {
+            demand = .live
+        } else {
+            demand = .none
         }
         demandLock.lock()
         _frameDemand = demand
@@ -284,16 +303,29 @@ final class MirrorServer {
         let timer = DispatchSource.makeTimerSource(queue: queue)
         timer.schedule(deadline: .now() + 1, repeating: 1)
         timer.setEventHandler { [weak self] in
-            guard let self, let client, client.isReady else { return }
+            guard let self else { return }
+            closeStalledClients()
             heartbeatSeq += 1
             var payload: [String: Any] = ["t": "hb", "seq": heartbeatSeq]
             if let status = statusProvider?() {
                 payload.merge(status) { $1 }
             }
-            sendText(payload, to: client)
+            for client in clients where client.isReady {
+                sendText(payload, to: client)
+            }
         }
         timer.resume()
         heartbeat = timer
+    }
+
+    /// 브라우저가 사라졌는데 TCP가 아직 안 끊긴 연결은 전송이 계속 막힌다. 이런 연결을 정리한다.
+    private func closeStalledClients() {
+        for client in clients {
+            if let blockedSince = client.blockedSince, Date().timeIntervalSince(blockedSince) > Self.stalledTimeout {
+                log.write("client \(client.id) stalled for \(Int(Self.stalledTimeout))s, closing")
+                client.connection.cancel()
+            }
+        }
     }
 }
 
@@ -304,6 +336,7 @@ private final class StreamClient {
     let connection: NWConnection
     var isReady = false
     var inFlight = 0
+    var blockedSince: Date?
 
     init(connection: NWConnection) {
         Self.nextID += 1
