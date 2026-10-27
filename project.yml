@@ -65,3 +65,11 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: $(BUNDLE_ID_PREFIX).tessync.broadcast
+schemes:
+  Tessync:
+    build:
+      targets:
+        Tessync: all
+        TessyncBroadcast: all
+    run:
+      config: Debug
