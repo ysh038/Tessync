@@ -6,6 +6,13 @@ enum HotspotAddress {
         ipv4Address(interfacePrefix: "bridge")
     }
 
+    /// 셀룰러 464XLAT(CLAT) 주소. 국내 통신사(IPv6)에서는 pdp_ip 인터페이스에 192.0.0.x(보통 192.0.0.2)가 잡힌다.
+    /// 사설 IP가 아니라 테슬라 브라우저가 막지 않고, 핫스팟 기기가 이 주소로 보내면 iPhone이 자기 주소로 받는다(실차 확인).
+    /// 핫스팟 쪽(bridge)에도 192.0.0.1이 생길 수 있어서 pdp_ip만 본다.
+    static func cellularXLAT() -> String? {
+        allAddresses().first { $0.interface.hasPrefix("pdp_ip") && $0.address.hasPrefix("192.0.0.") }?.address
+    }
+
     /// 집 Wi-Fi 같은 일반 Wi-Fi 주소. 같은 Wi-Fi의 컴퓨터 브라우저로 테스트할 때 쓴다.
     static func wifi() -> String? {
         ipv4Address(interfacePrefix: "en0")

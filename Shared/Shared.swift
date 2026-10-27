@@ -4,6 +4,8 @@ enum Tessync {
     static let httpPort: UInt16 = 8080
     static let streamPort: UInt16 = 8081
     static let fallbackHotspotAddress = "172.20.10.1"
+    /// 테슬라에서 여는 주소의 기본값. 핫스팟 주소(172.20.10.1)는 사설 IP라 테슬라 브라우저가 막는다.
+    static let fallbackTeslaAddress = "192.0.0.2"
 
     /// project.yml에서 Info.plist에 넣어준 App Group ID.
     static var appGroupID: String {

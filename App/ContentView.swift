@@ -149,6 +149,11 @@ struct ContentView: View {
                 Text("지금은 집 Wi-Fi 주소예요. 같은 Wi-Fi의 컴퓨터 브라우저로 테스트할 수 있어요.")
                     .font(.system(size: 13))
                     .foregroundStyle(Theme.textSecondary)
+            } else if let computer = status.computerAddress {
+                Text("핫스팟에 연결한 컴퓨터로 테스트할 때는 \(computer)")
+                    .font(.system(size: 13))
+                    .foregroundStyle(Theme.textSecondary)
+                    .textSelection(.enabled)
             }
         }
         .card()
@@ -180,6 +185,7 @@ struct ContentView: View {
                 .font(.system(size: 17, weight: .bold))
                 .foregroundStyle(Theme.textPrimary)
                 .padding(.bottom, 10)
+            TipRow(icon: "car.fill", title: "테슬라 주행 중 Wi-Fi 끄기 해제", detail: "켜져 있으면 출발할 때 화면이 끊겨요")
             TipRow(icon: "lock.open.fill", title: "자동 잠금 끄기", detail: "설정 → 디스플레이 및 밝기 → 자동 잠금: 안 함")
             TipRow(icon: "personalhotspot", title: "핫스팟과 셀룰러 켜두기", detail: "인터넷이 없으면 테슬라가 Wi-Fi를 끊을 수 있어요")
             TipRow(icon: "wifi", title: "호환성 최대화 끄기", detail: "5GHz로 연결돼 더 부드러워요. ESP32를 쓸 때만 켜세요")
@@ -217,7 +223,7 @@ struct ContentView: View {
             Text("네트워크 정보")
                 .font(.system(size: 17, weight: .bold))
                 .foregroundStyle(Theme.textPrimary)
-            Text("테슬라를 연결하고 방송을 켠 상태에서 캡처해 주세요. 테슬라 브라우저는 사설 주소를 막을 수 있어서, '시도' 표시가 붙은 주소에 :8080을 붙여 열어보세요.")
+            Text("테슬라에서 안 열릴 때 캡처해 주세요. 테슬라 브라우저는 사설 주소를 막아서, '테슬라' 표시가 붙은 셀룰러 주소로 열어요.")
                 .font(.system(size: 13))
                 .foregroundStyle(Theme.textSecondary)
             if status.interfaceAddresses.isEmpty {
@@ -248,6 +254,7 @@ struct ContentView: View {
 
     private func addressTag(_ item: HotspotAddress.InterfaceAddress) -> String {
         if item.isIPv6 { return "IPv6" }
+        if item.address == status.cellularAddress { return "테슬라" }
         return item.isPrivateIPv4 ? "사설" : "시도"
     }
 

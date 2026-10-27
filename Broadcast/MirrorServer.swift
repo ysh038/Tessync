@@ -35,6 +35,7 @@ final class MirrorServer {
     private var clients: [StreamClient] = []
     private var heartbeat: DispatchSourceTimer?
     private var heartbeatSeq = 0
+    private var lastNetwork = ""
     private var lastFrame: Data?
     private var stopped = false
 
@@ -313,6 +314,7 @@ final class MirrorServer {
         timer.setEventHandler { [weak self] in
             guard let self else { return }
             closeStalledClients()
+            logNetworkChange()
             heartbeatSeq += 1
             var payload: [String: Any] = ["t": "hb", "seq": heartbeatSeq]
             if let status = statusProvider?() {
@@ -324,6 +326,15 @@ final class MirrorServer {
         }
         timer.resume()
         heartbeat = timer
+    }
+
+    /// 핫스팟 주소와 테슬라 접속 주소(셀룰러 192.0.0.x)가 바뀔 때만 기록한다.
+    /// 주행 중 끊김이 셀룰러 주소가 사라져서인지, 핫스팟이 끊겨서인지 로그로 구분하려는 것.
+    private func logNetworkChange() {
+        let network = "hotspot=\(HotspotAddress.current() ?? "none") xlat=\(HotspotAddress.cellularXLAT() ?? "none")"
+        guard network != lastNetwork else { return }
+        lastNetwork = network
+        log.write("network \(network)")
     }
 
     /// 브라우저가 사라졌는데 TCP가 아직 안 끊긴 연결은 전송이 계속 막힌다. 이런 연결을 정리한다.

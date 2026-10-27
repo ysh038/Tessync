@@ -20,6 +20,7 @@ final class StatusModel: ObservableObject {
 
     @Published private(set) var hotspotAddress: String?
     @Published private(set) var wifiAddress: String?
+    @Published private(set) var cellularAddress: String?
     @Published private(set) var lowPowerMode = false
     @Published private(set) var server: ServerStatus?
     @Published private(set) var interfaceAddresses: [HotspotAddress.InterfaceAddress] = []
@@ -29,9 +30,18 @@ final class StatusModel: ObservableObject {
     var isBroadcasting: Bool { server != nil }
     var viewerCount: Int { server?.clients ?? 0 }
 
-    /// 테슬라에서 열 주소. 핫스팟에 기기가 없으면 집 Wi-Fi 주소, 그것도 없으면 기본 핫스팟 주소.
+    /// 테슬라에서 열 주소. 핫스팟 주소는 사설 IP라 테슬라가 막으므로 셀룰러 XLAT 주소(192.0.0.x)를 쓴다.
+    /// 핫스팟 없이 집 Wi-Fi에만 연결돼 있으면 같은 Wi-Fi 컴퓨터로 테스트하도록 Wi-Fi 주소를 보여준다.
     var playerAddress: String {
-        "\(hotspotAddress ?? wifiAddress ?? Tessync.fallbackHotspotAddress):\(Tessync.httpPort)"
+        if hotspotAddress == nil, let wifi = wifiAddress {
+            return "\(wifi):\(Tessync.httpPort)"
+        }
+        return "\(cellularAddress ?? Tessync.fallbackTeslaAddress):\(Tessync.httpPort)"
+    }
+
+    /// 핫스팟에 붙은 컴퓨터로 테스트할 주소. 컴퓨터가 IPv6를 쓰면 자기 자신이 192.0.0.2를 가져서 테슬라 주소로는 안 열린다.
+    var computerAddress: String? {
+        hotspotAddress.map { "\($0):\(Tessync.httpPort)" }
     }
 
     var playerURL: String { "http://\(playerAddress)" }
@@ -73,6 +83,7 @@ final class StatusModel: ObservableObject {
     func refresh() {
         hotspotAddress = HotspotAddress.current()
         wifiAddress = HotspotAddress.wifi()
+        cellularAddress = HotspotAddress.cellularXLAT()
         interfaceAddresses = HotspotAddress.allAddresses()
         lowPowerMode = ProcessInfo.processInfo.isLowPowerModeEnabled
         Task {
