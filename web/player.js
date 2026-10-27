@@ -1,0 +1,307 @@
+// Tessync 플레이어. 테슬라 내장 브라우저에서 동작한다.
+// 테슬라 브라우저의 Chromium 버전을 아직 모르므로 옵셔널 체이닝 같은 최신 문법은 쓰지 않는다.
+(function () {
+  'use strict';
+
+  var params = new URLSearchParams(location.search);
+  var WS_PORT = params.get('wsPort') || '8081';
+  var CONNECT_TIMEOUT_MS = 3000;
+  // 서버는 1초마다 하트비트를 보낸다. 3초 동안 아무것도 안 오면 죽은 연결로 본다.
+  var SILENCE_TIMEOUT_MS = 3000;
+  var RECONNECT_DELAYS_MS = [0, 500, 1000];
+  var OVERLAY_GRACE_MS = 1000;
+  var MAX_CONSECUTIVE_DECODE_ERRORS = 60;
+
+  var canvas = document.getElementById('screen');
+  var ctx = canvas.getContext('2d', { alpha: false });
+  var overlay = document.getElementById('overlay');
+  var statusEl = document.getElementById('status');
+  var hintEl = document.getElementById('hint');
+  var debugEl = document.getElementById('debug');
+  var fullscreenButton = document.getElementById('fullscreen');
+
+  var ws = null;
+  var wsStartedAt = 0;
+  var reconnectTimer = null;
+  var attempts = 0;
+  var everConnected = false;
+  var live = false;
+  var disconnectedSince = Date.now();
+  var lastMessageAt = 0;
+  var broadcastEnded = false;
+
+  var pending = null;
+  var decoding = false;
+  var current = null;
+  var currentOrientation = 1;
+  var hasFrame = false;
+
+  var stats = { frames: 0, framesInSecond: 0, fps: 0, decodeErrors: 0, consecutiveErrors: 0, reconnects: 0 };
+  var phone = {};
+
+  // MARK: 연결
+
+  function connect() {
+    clearTimeout(reconnectTimer);
+    reconnectTimer = null;
+    var socket;
+    try {
+      socket = new WebSocket('ws://' + location.hostname + ':' + WS_PORT + '/');
+    } catch (e) {
+      scheduleReconnect();
+      return;
+    }
+    socket.binaryType = 'arraybuffer';
+    ws = socket;
+    wsStartedAt = Date.now();
+
+    socket.onopen = function () {
+      if (ws !== socket) return;
+      attempts = 0;
+      everConnected = true;
+      live = true;
+      broadcastEnded = false;
+      lastMessageAt = Date.now();
+      socket.send(JSON.stringify({
+        t: 'hello', ua: navigator.userAgent, w: window.innerWidth, h: window.innerHeight, dpr: window.devicePixelRatio
+      }));
+    };
+    socket.onmessage = function (event) {
+      if (ws !== socket) return;
+      lastMessageAt = Date.now();
+      if (typeof event.data === 'string') {
+        handleText(event.data);
+      } else {
+        handleFrame(event.data);
+      }
+    };
+    socket.onclose = function () {
+      if (ws !== socket) return;
+      ws = null;
+      markDisconnected();
+      scheduleReconnect();
+    };
+  }
+
+  // 재접속 실패가 반복될 때마다 시각을 갱신하면 안내 문구가 영영 안 뜬다. 연결이 끊긴 순간만 기록한다.
+  function markDisconnected() {
+    if (!live) return;
+    live = false;
+    disconnectedSince = Date.now();
+  }
+
+  // 죽은 TCP 연결은 close 핸드셰이크가 오래 걸린다. 기다리지 않고 버린 뒤 바로 새로 연결한다.
+  function abandon(socket) {
+    socket.onopen = socket.onmessage = socket.onclose = socket.onerror = null;
+    try { socket.close(); } catch (e) { /* 이미 닫힘 */ }
+    if (ws === socket) {
+      ws = null;
+      markDisconnected();
+    }
+    scheduleReconnect();
+  }
+
+  function scheduleReconnect() {
+    if (reconnectTimer) return;
+    var delay = attempts < RECONNECT_DELAYS_MS.length ? RECONNECT_DELAYS_MS[attempts] : 1000;
+    attempts++;
+    stats.reconnects++;
+    reconnectTimer = setTimeout(connect, delay);
+  }
+
+  function handleText(text) {
+    var message;
+    try { message = JSON.parse(text); } catch (e) { return; }
+    if (message.t === 'hb') {
+      phone = message;
+    } else if (message.t === 'bye') {
+      broadcastEnded = true;
+    }
+  }
+
+  // MARK: 프레임
+
+  // 패킷: [0]=1(JPEG) [1]=EXIF orientation [2...]=JPEG
+  function handleFrame(buffer) {
+    if (buffer.byteLength < 3 || new Uint8Array(buffer, 0, 1)[0] !== 1) return;
+    // 디코딩 중에 들어온 프레임은 최신 것 하나만 남긴다. 밀린 프레임을 쌓지 않는다.
+    pending = buffer;
+    if (!decoding) decodeNext();
+  }
+
+  function decodeNext() {
+    if (!pending) return;
+    var buffer = pending;
+    pending = null;
+    decoding = true;
+    var orientation = new Uint8Array(buffer, 1, 1)[0];
+    var blob = new Blob([new Uint8Array(buffer, 2)], { type: 'image/jpeg' });
+    decodeJPEG(blob).then(function (image) {
+      stats.consecutiveErrors = 0;
+      show(image, orientation);
+    }, function () {
+      stats.decodeErrors++;
+      stats.consecutiveErrors++;
+      if (stats.consecutiveErrors >= MAX_CONSECUTIVE_DECODE_ERRORS) location.reload();
+    }).then(function () {
+      decoding = false;
+      if (pending) decodeNext();
+    });
+  }
+
+  function decodeJPEG(blob) {
+    if (window.createImageBitmap) return createImageBitmap(blob);
+    return new Promise(function (resolve, reject) {
+      var url = URL.createObjectURL(blob);
+      var image = new Image();
+      image.onload = function () { URL.revokeObjectURL(url); resolve(image); };
+      image.onerror = function () { URL.revokeObjectURL(url); reject(new Error('decode')); };
+      image.src = url;
+    });
+  }
+
+  function show(image, orientation) {
+    // 이전 비트맵은 바로 해제한다. 장시간 사용 시 메모리가 쌓이지 않게.
+    if (current && current.close) current.close();
+    current = image;
+    currentOrientation = orientation;
+    hasFrame = true;
+    stats.frames++;
+    stats.framesInSecond++;
+    draw();
+  }
+
+  // MARK: 그리기
+
+  function resizeCanvas() {
+    var ratio = window.devicePixelRatio || 1;
+    var width = Math.round(window.innerWidth * ratio);
+    var height = Math.round(window.innerHeight * ratio);
+    if (canvas.width !== width || canvas.height !== height) {
+      canvas.width = width;
+      canvas.height = height;
+    }
+  }
+
+  // EXIF orientation: 1=그대로, 3=180도, 6=시계방향 90도, 8=반시계방향 90도
+  function rotationFor(orientation) {
+    switch (orientation) {
+      case 3: case 4: return Math.PI;
+      case 5: case 6: return Math.PI / 2;
+      case 7: case 8: return -Math.PI / 2;
+      default: return 0;
+    }
+  }
+
+  function draw() {
+    resizeCanvas();
+    ctx.fillStyle = '#000';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    if (!current) return;
+    var angle = rotationFor(currentOrientation);
+    var sideways = angle !== 0 && angle !== Math.PI;
+    var sourceWidth = current.width;
+    var sourceHeight = current.height;
+    var shownWidth = sideways ? sourceHeight : sourceWidth;
+    var shownHeight = sideways ? sourceWidth : sourceHeight;
+    var scale = Math.min(canvas.width / shownWidth, canvas.height / shownHeight);
+    ctx.save();
+    ctx.translate(canvas.width / 2, canvas.height / 2);
+    ctx.rotate(angle);
+    ctx.scale(scale, scale);
+    ctx.drawImage(current, -sourceWidth / 2, -sourceHeight / 2);
+    ctx.restore();
+  }
+
+  // MARK: 상태 감시
+
+  function setOverlay(title, hint) {
+    if (title) {
+      statusEl.textContent = title;
+      hintEl.textContent = hint || '';
+      overlay.classList.remove('hidden');
+    } else {
+      overlay.classList.add('hidden');
+    }
+  }
+
+  function tick() {
+    var now = Date.now();
+    var open = ws && ws.readyState === WebSocket.OPEN;
+
+    if (ws && ws.readyState === WebSocket.CONNECTING && now - wsStartedAt > CONNECT_TIMEOUT_MS) {
+      abandon(ws);
+    } else if (open && now - lastMessageAt > SILENCE_TIMEOUT_MS) {
+      abandon(ws);
+    }
+
+    open = ws && ws.readyState === WebSocket.OPEN;
+    if (open && hasFrame) {
+      setOverlay(null);
+    } else if (open) {
+      setOverlay('화면 기다리는 중…');
+    } else if (now - disconnectedSince < OVERLAY_GRACE_MS && hasFrame) {
+      // 짧은 재연결은 마지막 화면을 유지한 채 조용히 넘어간다.
+      setOverlay(null);
+    } else if (broadcastEnded) {
+      setOverlay('iPhone 화면 방송이 종료됐어요', 'iPhone에서 Tessync 방송을 다시 시작하면 자동으로 연결됩니다.');
+    } else if (everConnected) {
+      setOverlay('다시 연결 중…', 'iPhone 화면이 잠겼거나 핫스팟 연결이 끊겼을 수 있어요.');
+    } else {
+      setOverlay('iPhone 연결 대기 중', 'iPhone 핫스팟 연결과 Tessync 화면 방송을 확인하세요.');
+    }
+  }
+
+  function updateDebug() {
+    stats.fps = stats.framesInSecond;
+    stats.framesInSecond = 0;
+    if (!debugEl.classList.contains('on')) return;
+    var age = lastMessageAt ? ((Date.now() - lastMessageAt) / 1000).toFixed(1) + 's' : '-';
+    debugEl.textContent = [
+      '수신 fps  ' + stats.fps,
+      '프레임    ' + (current ? current.width + 'x' + current.height + ' o' + currentOrientation : '-'),
+      '마지막    ' + age,
+      '재연결    ' + stats.reconnects,
+      '디코딩오류 ' + stats.decodeErrors,
+      '폰 단계   ' + (phone.lvl !== undefined ? phone.lvl : '-'),
+      '폰 fps    ' + (phone.fps !== undefined ? phone.fps : '-'),
+      '폰 메모리 ' + (phone.mem !== undefined ? phone.mem + 'MB' : '-')
+    ].join('\n');
+  }
+
+  // MARK: 시작
+
+  document.getElementById('debugToggle').addEventListener('click', function () {
+    debugEl.classList.toggle('on');
+    updateDebug();
+  });
+
+  var root = document.documentElement;
+  var requestFullscreen = root.requestFullscreen || root.webkitRequestFullscreen;
+  if (requestFullscreen) {
+    fullscreenButton.hidden = false;
+    fullscreenButton.addEventListener('click', function () {
+      var result = requestFullscreen.call(root);
+      if (result && result.catch) result.catch(function () {});
+    });
+    document.addEventListener('fullscreenchange', function () {
+      fullscreenButton.hidden = !!document.fullscreenElement;
+    });
+  }
+
+  window.addEventListener('resize', draw);
+  document.addEventListener('visibilitychange', function () {
+    // 테슬라에서 다른 화면을 보고 돌아오면 기다리지 않고 바로 다시 붙는다.
+    if (document.visibilityState === 'visible' && !ws) {
+      attempts = 0;
+      clearTimeout(reconnectTimer);
+      reconnectTimer = null;
+      connect();
+    }
+  });
+
+  setInterval(tick, 250);
+  setInterval(updateDebug, 1000);
+  draw();
+  connect();
+})();

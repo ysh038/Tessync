@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+<title>Tessync</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #000; overflow: hidden; }
+  canvas { position: fixed; inset: 0; width: 100vw; height: 100vh; display: block; }
+  #overlay {
+    position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 12px; color: #ddd; font: 600 28px/1.4 system-ui, sans-serif; text-align: center; pointer-events: none;
+    background: rgba(0, 0, 0, 0.55); transition: opacity 0.2s;
+  }
+  #overlay small { font-size: 18px; font-weight: 400; color: #aaa; }
+  #overlay.hidden { opacity: 0; }
+  #debug {
+    position: fixed; right: 8px; bottom: 8px; padding: 6px 10px; border-radius: 6px; background: rgba(0, 0, 0, 0.7);
+    color: #9f9; font: 14px/1.4 ui-monospace, monospace; white-space: pre; display: none;
+  }
+  #debug.on { display: block; }
+  #debugToggle { position: fixed; right: 0; top: 0; width: 72px; height: 72px; }
+  #fullscreen {
+    position: fixed; left: 12px; top: 12px; padding: 10px 16px; border: 0; border-radius: 8px;
+    background: rgba(255, 255, 255, 0.15); color: #fff; font: 16px system-ui, sans-serif;
+  }
+</style>
+</head>
+<body>
+<canvas id="screen"></canvas>
+<div id="overlay"><div id="status">연결 중…</div><small id="hint"></small></div>
+<button id="fullscreen" hidden>전체화면</button>
+<div id="debugToggle"></div>
+<div id="debug"></div>
+<script src="player.js"></script>
+</body>
+</html>

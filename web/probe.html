@@ -1,0 +1,190 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tessync 점검</title>
+<style>
+  body { margin: 0; padding: 24px; background: #111; color: #eee; font: 18px/1.5 system-ui, sans-serif; }
+  h1 { font-size: 26px; margin: 0 0 16px; }
+  h2 { font-size: 20px; margin: 28px 0 8px; }
+  table { border-collapse: collapse; width: 100%; max-width: 1100px; }
+  td { border-bottom: 1px solid #333; padding: 6px 8px; vertical-align: top; word-break: break-all; }
+  td:first-child { width: 280px; color: #aaa; }
+  .yes { color: #6f6; } .no { color: #f66; }
+  button { font: inherit; padding: 10px 18px; margin: 4px 8px 4px 0; border: 0; border-radius: 8px; background: #2a6df4; color: #fff; }
+  #driveArea { display: flex; gap: 16px; margin-top: 12px; }
+  #driveArea canvas, #driveArea video { width: 320px; height: 180px; background: #000; }
+  #log { white-space: pre-wrap; font: 15px/1.4 ui-monospace, monospace; color: #9f9; max-height: 320px; overflow: auto; }
+</style>
+</head>
+<body>
+<h1>Tessync 테슬라 브라우저 점검</h1>
+<p>결과를 사진으로 찍어두거나 "결과 보내기"를 누르면 iPhone 진단 로그에 저장됩니다.</p>
+<button id="send">결과 보내기</button>
+
+<h2>기능 지원</h2>
+<table id="features"></table>
+
+<h2>주행 중 재생 테스트</h2>
+<p>정차 중에 시작한 뒤 주행해 보세요. 왼쪽 canvas와 오른쪽 video가 계속 움직이는지, 아래 기록에서 "멈춤"이 찍히는지 확인합니다.</p>
+<button id="driveStart">테스트 시작</button>
+<button id="driveStop">중지</button>
+<div id="driveArea"><canvas id="source" width="320" height="180"></canvas><video id="video" muted playsinline></video></div>
+<div id="log"></div>
+
+<script>
+(function () {
+  'use strict';
+  var results = {};
+  var table = document.getElementById('features');
+  var logEl = document.getElementById('log');
+
+  function row(name, value) {
+    results[name] = value;
+    var tr = document.createElement('tr');
+    var label = document.createElement('td');
+    var cell = document.createElement('td');
+    label.textContent = name;
+    if (value === true || value === false) {
+      cell.textContent = value ? '지원' : '미지원';
+      cell.className = value ? 'yes' : 'no';
+    } else {
+      cell.textContent = String(value);
+    }
+    tr.appendChild(label);
+    tr.appendChild(cell);
+    table.appendChild(tr);
+  }
+
+  function log(text) {
+    var line = new Date().toLocaleTimeString() + ' ' + text;
+    (results.driveLog = results.driveLog || []).push(line);
+    logEl.textContent = line + '\n' + logEl.textContent;
+  }
+
+  var ua = navigator.userAgent;
+  var chrome = ua.match(/Chrome\/([\d.]+)/);
+  row('User-Agent', ua);
+  row('Chromium 버전', chrome ? chrome[1] : '알 수 없음');
+  row('화면 (screen)', screen.width + 'x' + screen.height);
+  row('창 크기 (inner)', window.innerWidth + 'x' + window.innerHeight);
+  row('devicePixelRatio', window.devicePixelRatio);
+  row('CPU 코어', navigator.hardwareConcurrency || '알 수 없음');
+  row('메모리 (GB)', navigator.deviceMemory || '알 수 없음');
+  row('보안 컨텍스트 (isSecureContext)', !!window.isSecureContext);
+  row('createImageBitmap', typeof createImageBitmap === 'function');
+  row('OffscreenCanvas', typeof OffscreenCanvas === 'function');
+  row('Web Worker', typeof Worker === 'function');
+  row('WebAssembly', typeof WebAssembly === 'object');
+  row('WebGL', (function () { try { return !!document.createElement('canvas').getContext('webgl'); } catch (e) { return false; } })());
+  row('WebGL2', (function () { try { return !!document.createElement('canvas').getContext('webgl2'); } catch (e) { return false; } })());
+  row('전체화면 API', !!(document.documentElement.requestFullscreen || document.documentElement.webkitRequestFullscreen));
+  row('WebUSB', !!navigator.usb);
+  row('Web Bluetooth', !!navigator.bluetooth);
+  row('WebCodecs VideoDecoder', typeof VideoDecoder === 'function');
+  row('WebCodecs ImageDecoder', typeof ImageDecoder === 'function');
+
+  var mseCodecs = {
+    'MSE H.264 Baseline': 'video/mp4; codecs="avc1.42E01F"',
+    'MSE H.264 High': 'video/mp4; codecs="avc1.640028"',
+    'MSE H.265 (hvc1)': 'video/mp4; codecs="hvc1.1.6.L93.B0"',
+    'MSE H.265 (hev1)': 'video/mp4; codecs="hev1.1.6.L93.B0"'
+  };
+  Object.keys(mseCodecs).forEach(function (name) {
+    row(name, !!(window.MediaSource && MediaSource.isTypeSupported(mseCodecs[name])));
+  });
+
+  if (typeof VideoDecoder === 'function') {
+    var decoderConfigs = {
+      'WebCodecs H.264': { codec: 'avc1.42E01F', codedWidth: 1280, codedHeight: 720 },
+      'WebCodecs H.264 하드웨어': { codec: 'avc1.42E01F', codedWidth: 1280, codedHeight: 720, hardwareAcceleration: 'prefer-hardware' },
+      'WebCodecs H.265': { codec: 'hvc1.1.6.L93.B0', codedWidth: 1280, codedHeight: 720 }
+    };
+    Object.keys(decoderConfigs).forEach(function (name) {
+      VideoDecoder.isConfigSupported(decoderConfigs[name]).then(function (r) { row(name, !!r.supported); }, function () { row(name, false); });
+    });
+  }
+
+  // 같은 iPhone의 WebSocket 포트에 붙을 수 있는지 확인한다(Tessync 방송 중일 때만 성공).
+  (function () {
+    var started = Date.now();
+    try {
+      var socket = new WebSocket('ws://' + location.hostname + ':8081/');
+      var timer = setTimeout(function () { row('WebSocket 8081', '시간 초과'); socket.close(); }, 4000);
+      socket.onopen = function () { clearTimeout(timer); row('WebSocket 8081', '연결됨 (' + (Date.now() - started) + 'ms)'); socket.close(); };
+      socket.onerror = function () { clearTimeout(timer); row('WebSocket 8081', '실패 (방송이 꺼져 있으면 정상)'); };
+    } catch (e) {
+      row('WebSocket 8081', '예외: ' + e.message);
+    }
+  })();
+
+  // 주행 중 테스트: canvas 애니메이션과, 같은 canvas를 스트림으로 받은 <video>가 계속 진행되는지 1초마다 기록한다.
+  var source = document.getElementById('source');
+  var sourceCtx = source.getContext('2d');
+  var video = document.getElementById('video');
+  var running = false;
+  var frameCount = 0;
+  var lastFrameCount = 0;
+  var lastVideoTime = -1;
+  var monitor = null;
+
+  function animate() {
+    if (!running) return;
+    frameCount++;
+    var t = frameCount / 60;
+    sourceCtx.fillStyle = '#222';
+    sourceCtx.fillRect(0, 0, 320, 180);
+    sourceCtx.fillStyle = '#2a6df4';
+    sourceCtx.fillRect(140 + Math.sin(t * 2) * 120, 70, 40, 40);
+    sourceCtx.fillStyle = '#fff';
+    sourceCtx.font = '16px sans-serif';
+    sourceCtx.fillText(new Date().toLocaleTimeString(), 10, 24);
+    requestAnimationFrame(animate);
+  }
+
+  document.getElementById('driveStart').onclick = function () {
+    if (running) return;
+    running = true;
+    frameCount = lastFrameCount = 0;
+    animate();
+    if (source.captureStream) {
+      video.srcObject = source.captureStream(30);
+      var playResult = video.play();
+      if (playResult && playResult.catch) playResult.catch(function (e) { log('video play 실패: ' + e.message); });
+    } else {
+      log('captureStream 미지원 (video 테스트 불가)');
+    }
+    monitor = setInterval(function () {
+      var canvasFps = frameCount - lastFrameCount;
+      lastFrameCount = frameCount;
+      var videoTime = video.currentTime;
+      var videoMoving = videoTime !== lastVideoTime;
+      lastVideoTime = videoTime;
+      var line = 'canvas ' + canvasFps + 'fps, video ' + (videoMoving ? '진행' : '멈춤') + (video.paused ? ' (paused)' : '');
+      if (canvasFps === 0 || !videoMoving) line += '  <-- 멈춤';
+      log(line);
+    }, 1000);
+    log('테스트 시작');
+  };
+
+  document.getElementById('driveStop').onclick = function () {
+    running = false;
+    clearInterval(monitor);
+    video.pause();
+    log('테스트 중지');
+  };
+
+  document.getElementById('send').onclick = function () {
+    results.sentAt = new Date().toISOString();
+    var request = new XMLHttpRequest();
+    request.open('POST', '/report');
+    request.setRequestHeader('Content-Type', 'application/json');
+    request.onload = function () { alert(request.status < 300 ? '보냈습니다' : '실패: ' + request.status); };
+    request.onerror = function () { alert('보내기 실패. Tessync 방송이 켜져 있는지 확인하세요.'); };
+    request.send(JSON.stringify(results));
+  };
+})();
+</script>
+</body>
+</html>

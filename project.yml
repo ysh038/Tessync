@@ -1,0 +1,68 @@
+# XcodeGen spec. 맥에서 `xcodegen generate`로 Tessync.xcodeproj를 만든다.
+# BUNDLE_ID_PREFIX와 DEVELOPMENT_TEAM을 본인 값으로 바꿔야 한다.
+name: Tessync
+options:
+  deploymentTarget:
+    iOS: "16.0"
+  createIntermediateGroups: true
+settings:
+  base:
+    BUNDLE_ID_PREFIX: com.example
+    DEVELOPMENT_TEAM: ""
+    CODE_SIGN_STYLE: Automatic
+    SWIFT_VERSION: "5.9"
+    MARKETING_VERSION: "0.1.0"
+    CURRENT_PROJECT_VERSION: "1"
+    TARGETED_DEVICE_FAMILY: "1"
+targets:
+  Tessync:
+    type: application
+    platform: iOS
+    sources:
+      - App
+      - Shared
+    dependencies:
+      - target: TessyncBroadcast
+    info:
+      path: App/Info.plist
+      properties:
+        CFBundleDisplayName: Tessync
+        UILaunchScreen: {}
+        UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
+        NSLocalNetworkUsageDescription: 테슬라 브라우저가 핫스팟을 통해 이 iPhone에 접속하려면 로컬 네트워크 권한이 필요합니다.
+        TessyncAppGroup: group.$(BUNDLE_ID_PREFIX).tessync
+    entitlements:
+      path: App/Tessync.entitlements
+      properties:
+        com.apple.security.application-groups:
+          - group.$(BUNDLE_ID_PREFIX).tessync
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: $(BUNDLE_ID_PREFIX).tessync
+  TessyncBroadcast:
+    type: app-extension
+    platform: iOS
+    sources:
+      - Broadcast
+      - Shared
+      - path: web
+        type: folder
+        buildPhase: resources
+    info:
+      path: Broadcast/Info.plist
+      properties:
+        CFBundleDisplayName: Tessync
+        NSLocalNetworkUsageDescription: 테슬라 브라우저가 핫스팟을 통해 이 iPhone에 접속하려면 로컬 네트워크 권한이 필요합니다.
+        TessyncAppGroup: group.$(BUNDLE_ID_PREFIX).tessync
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.broadcast-services-upload
+          NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).SampleHandler
+          RPBroadcastProcessMode: RPBroadcastProcessModeSampleBuffer
+    entitlements:
+      path: Broadcast/TessyncBroadcast.entitlements
+      properties:
+        com.apple.security.application-groups:
+          - group.$(BUNDLE_ID_PREFIX).tessync
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: $(BUNDLE_ID_PREFIX).tessync.broadcast
