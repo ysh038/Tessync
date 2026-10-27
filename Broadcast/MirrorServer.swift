@@ -168,6 +168,14 @@ final class MirrorServer {
             serveFile("probe.html", type: "text/html; charset=utf-8", on: connection)
         case ("GET", "/log"):
             sendHTTP(connection, status: "200 OK", contentType: "text/plain; charset=utf-8", body: Data(log.read().utf8))
+        case ("GET", "/status"):
+            // 메인 앱이 127.0.0.1로 물어보고 "방송 중"인지, 몇 대가 보고 있는지 화면에 보여준다.
+            var payload: [String: Any] = ["clients": clients.filter { $0.isReady }.count]
+            if let status = statusProvider?() {
+                payload.merge(status) { $1 }
+            }
+            let body = (try? JSONSerialization.data(withJSONObject: payload)) ?? Data("{}".utf8)
+            sendHTTP(connection, status: "200 OK", contentType: "application/json", body: body)
         case ("POST", "/report"):
             log.write("probe report: \(String(decoding: request.body.prefix(16 * 1024), as: UTF8.self))")
             sendHTTP(connection, status: "204 No Content", contentType: nil, body: Data())

@@ -40,6 +40,9 @@ targets:
         UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
         NSLocalNetworkUsageDescription: 테슬라 브라우저가 핫스팟을 통해 이 iPhone에 접속하려면 로컬 네트워크 권한이 필요합니다.
         TessyncAppGroup: group.$(BUNDLE_ID_PREFIX).tessync
+        # 앱이 127.0.0.1의 방송 서버(/status, /log)에 http로 묻기 위해 필요하다.
+        NSAppTransportSecurity:
+          NSAllowsLocalNetworking: true
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: $(BUNDLE_ID_PREFIX).tessync

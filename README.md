@@ -99,3 +99,5 @@ npm i -D playwright && node tools/player-test.mjs
 - 텍스트(서버 → 브라우저): `{"t":"hb","seq",...,"lvl","fps","mem"}` 1초마다, `{"t":"bye"}` 방송 종료 시
 - 텍스트(브라우저 → 서버): `{"t":"hello","ua","w","h","dpr"}` 접속 시
 - 브라우저는 3초 동안 아무 메시지도 없으면 연결을 버리고 재접속한다
+- HTTP `/status`: `{"clients","fps","mem","lvl"}`. 메인 앱이 `127.0.0.1`로 물어 방송 상태를 표시한다
+- HTTP `/log`: 진단 로그(최신이 위). 무료 계정에서는 앱이 이 경로로 로그를 읽는다

@@ -55,6 +55,10 @@ http.createServer((req, res) => {
     req.on('end', () => { state.reports.push(body); console.log('probe report', body.slice(0, 300)); res.writeHead(204).end(); });
     return;
   }
+  if (url.pathname === '/status') {
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    return res.end(JSON.stringify({ clients: state.clients.size, fps: FPS, mem: 20, lvl: 0 }));
+  }
   if (url.pathname === '/log') {
     res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8' });
     return res.end(`mock log\nconnections=${state.connections}\n${state.reports.join('\n')}`);

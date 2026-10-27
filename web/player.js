@@ -4,7 +4,7 @@
   'use strict';
 
   // 앱 번들에 새 플레이어가 들어갔는지 디버그 화면에서 확인하는 용도. 플레이어를 고칠 때마다 올린다.
-  var PLAYER_VERSION = '2026-10-27.6';
+  var PLAYER_VERSION = '2026-10-27.7';
   var params = new URLSearchParams(location.search);
   var WS_PORT = params.get('wsPort') || '8081';
   var CONNECT_TIMEOUT_MS = 3000;
@@ -19,6 +19,7 @@
   var overlay = document.getElementById('overlay');
   var statusEl = document.getElementById('status');
   var hintEl = document.getElementById('hint');
+  var panelEl = document.getElementById('panel');
   var debugEl = document.getElementById('debug');
   var fullscreenButton = document.getElementById('fullscreen');
 
@@ -221,10 +222,12 @@
 
   // MARK: 상태 감시
 
-  function setOverlay(title, hint) {
+  // waiting=true면 스피너를 돌린다. 사용자가 뭔가 해야 하는 상태(방송 종료)는 멈춘 화면으로 보여준다.
+  function setOverlay(title, hint, waiting) {
     if (title) {
       statusEl.textContent = title;
       hintEl.textContent = hint || '';
+      panelEl.classList.toggle('still', waiting === false);
       overlay.classList.remove('hidden');
     } else {
       overlay.classList.add('hidden');
@@ -252,16 +255,16 @@
     if (open && hasFrame) {
       setOverlay(null);
     } else if (open) {
-      setOverlay('화면 기다리는 중…');
+      setOverlay('화면을 불러오고 있어요', '', true);
     } else if (now - disconnectedSince < OVERLAY_GRACE_MS && hasFrame) {
       // 짧은 재연결은 마지막 화면을 유지한 채 조용히 넘어간다.
       setOverlay(null);
     } else if (broadcastEnded) {
-      setOverlay('iPhone 화면 방송이 종료됐어요', 'iPhone 화면이 잠기면 방송이 꺼집니다(자동 잠금: 안 함 권장). Tessync 방송을 다시 시작하면 자동으로 연결됩니다.');
+      setOverlay('iPhone 화면 방송이 종료됐어요', 'iPhone 화면이 잠기면 방송이 꺼져요. 자동 잠금을 "안 함"으로 두고, Tessync 방송을 다시 시작하면 자동으로 연결돼요.', false);
     } else if (everConnected) {
-      setOverlay('다시 연결 중…', 'iPhone 화면이 잠겼거나 핫스팟 연결이 끊겼을 수 있어요.');
+      setOverlay('다시 연결하고 있어요', 'iPhone 화면이 잠겼거나 핫스팟 연결이 끊겼을 수 있어요.', true);
     } else {
-      setOverlay('iPhone 연결 대기 중', 'iPhone 핫스팟 연결과 Tessync 화면 방송을 확인하세요.');
+      setOverlay('iPhone을 기다리고 있어요', 'iPhone 핫스팟에 연결하고 Tessync 화면 방송을 시작하세요.', true);
     }
   }
 
