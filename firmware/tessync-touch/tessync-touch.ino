@@ -4,6 +4,8 @@
 //
 // 시리얼 명령 (115200, 줄 단위)
 //   m dx dy   상대 이동 (픽셀이 아니라 마우스 이동량. 한 번에 ±127씩 나눠 보낸다)
+//   g dx dy s 걸음 이동: x축, y축을 따로, 크기 s짜리 보고서로 나눠 보낸다(마지막은 나머지).
+//             iOS 포인터 가속은 보고서 하나의 크기에 따라 달라지므로, 걸음 크기를 고정하면 이동 거리가 일정하다.
 //   c         클릭
 //   d / u     버튼 누르기 / 떼기 (드래그, 길게 누르기)
 //   w n       스크롤
@@ -76,6 +78,16 @@ static void move(long dx, long dy) {
   }
 }
 
+static void stepAxis(long amount, long stepSize, bool horizontal) {
+  long sign = amount < 0 ? -1 : 1;
+  long remaining = labs(amount);
+  while (remaining > 0) {
+    long step = min(remaining, stepSize);
+    sendReport(horizontal ? (int8_t)(sign * step) : 0, horizontal ? 0 : (int8_t)(sign * step), 0);
+    remaining -= step;
+  }
+}
+
 static void setButtons(uint8_t value) {
   buttons = value;
   sendReport(0, 0, 0);
@@ -85,8 +97,8 @@ static void handleCommand(String line) {
   line.trim();
   if (line.length() == 0) return;
   char command = line.charAt(0);
-  long a = 0, b = 0;
-  sscanf(line.c_str() + 1, "%ld %ld", &a, &b);
+  long a = 0, b = 0, c = 0;
+  sscanf(line.c_str() + 1, "%ld %ld %ld", &a, &b, &c);
 
   if (command == 's') {
     Serial.printf("status connected=%d\n", connected);
@@ -98,6 +110,12 @@ static void handleCommand(String line) {
   }
   switch (command) {
     case 'm': move(a, b); break;
+    case 'g': {
+      long stepSize = constrain(c, 1, 127);
+      stepAxis(a, stepSize, true);
+      stepAxis(b, stepSize, false);
+      break;
+    }
     case 'c': setButtons(1); delay(40); setButtons(0); break;
     case 'd': setButtons(1); break;
     case 'u': setButtons(0); break;
