@@ -188,9 +188,10 @@ struct ContentView: View {
             TipRow(icon: "car.fill", title: "테슬라 주행 중 Wi-Fi 끄기 해제", detail: "켜져 있으면 출발할 때 화면이 끊겨요")
             TipRow(icon: "lock.open.fill", title: "자동 잠금 끄기", detail: "설정 → 디스플레이 및 밝기 → 자동 잠금: 안 함")
             TipRow(icon: "personalhotspot", title: "핫스팟과 셀룰러 켜두기", detail: "인터넷이 없으면 테슬라가 Wi-Fi를 끊을 수 있어요")
-            TipRow(icon: "wifi", title: "호환성 최대화 끄기", detail: "5GHz로 연결돼 더 부드러워요. ESP32를 쓸 때만 켜세요")
+            TipRow(icon: "wifi", title: "호환성 최대화 끄기", detail: "5GHz로 연결돼 더 부드럽고 블루투스 소리와 겹치지 않아요")
             TipRow(icon: "trash.fill", title: "테슬라에 저장된 다른 Wi-Fi 지우기", detail: "집 Wi-Fi로 자동 전환되는 걸 막아요")
             TipRow(icon: "speaker.wave.2.fill", title: "소리는 블루투스로", detail: "영상만 보내요. 소리는 평소처럼 나와요")
+            TipRow(icon: "music.note", title: "음악이 안 나오면", detail: "화면 방송 중에는 소리를 막는 음악 앱이 있어요. 테슬라 음악 앱이나 유튜브로 들어보세요")
         }
         .card()
     }

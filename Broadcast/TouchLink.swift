@@ -148,6 +148,10 @@ final class TouchLink {
     }
 
     private func handle(line: String) {
+        if line.hasPrefix("hello ") {
+            // 칩과 Wi-Fi 대역이 들어 있다. 5GHz로 붙었는지 진단 로그에서 확인한다.
+            log.write("touch device \(line)")
+        }
         if line.hasPrefix("hb ") || line.hasPrefix("hello ") {
             let ready = line.contains("ble=1")
             lock.lock()

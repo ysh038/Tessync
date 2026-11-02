@@ -8,7 +8,10 @@
 //     서버 주소를 비워두면 게이트웨이(핫스팟이면 아이폰)로 건다. 1초마다 "hb" 줄을 보낸다(핫스팟 90초 무통신 끊김 방지).
 //   - Wi-Fi 설정: 저장된 Wi-Fi가 없거나 BOOT 버튼을 3초 누르면 "Tessync-Touch-Setup" Wi-Fi를 띄운다.
 //     (BOOT를 누른 채 전원을 넣으면 펌웨어 업로드 모드로 켜지므로, 켜진 뒤에 누른다.)
-//     거기 접속해 http://192.168.4.1 에서 Wi-Fi 이름, 비밀번호, 서버 주소를 입력한다. ESP32는 2.4GHz만 된다.
+//     거기 접속해 http://192.168.4.1 에서 Wi-Fi를 고르고 비밀번호, 서버 주소를 입력한다.
+//
+// 보드: ESP32-C5(2.4/5GHz, 아이폰 핫스팟 호환성 최대화를 꺼도 된다)와 오리지널 ESP32(2.4GHz만) 모두 이 코드로 빌드한다.
+// 빌드와 업로드는 tools/flash-touch.sh가 칩을 알아내 알맞은 옵션으로 한다.
 //
 // 명령 (줄 단위)
 //   m dx dy   상대 이동 (픽셀이 아니라 마우스 이동량. 한 번에 ±127씩 나눠 보낸다)
@@ -28,14 +31,19 @@
 #include <Preferences.h>
 #include <WebServer.h>
 #include <WiFi.h>
+#include <soc/soc_caps.h>
 
 static const char* DEVICE_NAME = "Tessync Touch";
 static const uint8_t REPORT_ID = 1;
 // 보고서 사이 간격. BLE 연결 간격(iOS 최소 15ms)보다 빨리 보내면 전송 버퍼가 차서 일부가 버려진다.
 static const int REPORT_GAP_MS = 15;
 static const int NOTIFY_RETRIES = 10;
-// DevKitC의 BOOT 버튼. 누르면 LOW.
+// BOOT 버튼. 누르면 LOW. 칩마다 부트 핀이 정해져 있어서 보드 모델과 상관없다.
+#if CONFIG_IDF_TARGET_ESP32C5
+static const int BOOT_BUTTON_PIN = 28;
+#else
 static const int BOOT_BUTTON_PIN = 0;
+#endif
 
 // 3버튼 + X/Y + 휠, 각 1바이트 부호 있는 상대값.
 static uint8_t reportMap[] = {
@@ -70,6 +78,8 @@ static const uint16_t CONTROL_PORT = 8082;
 static Preferences prefs;
 static String wifiName, wifiPassword, serverHost;
 static WebServer* setupServer = nullptr;
+// 설정 페이지에 보여줄 주변 Wi-Fi 목록(<option> 태그). 켤 때 한 번 찾는다.
+static String networkOptions;
 static WiFiClient control;
 static unsigned long lastConnectAttempt = 0;
 static unsigned long lastHeartbeat = 0;
@@ -145,6 +155,12 @@ static void setButtons(uint8_t value) {
   sendReport(0, 0, 0);
 }
 
+// 어떤 칩이 어느 대역에 붙었는지. 아이폰 진단 로그에서 5GHz 연결을 확인하는 데 쓴다.
+static String wifiSummary() {
+  int channel = WiFi.channel();
+  return String("chip=") + ESP.getChipModel() + " band=" + (channel > 14 ? "5GHz" : "2.4GHz") + " ch=" + channel + " rssi=" + WiFi.RSSI();
+}
+
 static void handleCommand(String line) {
   line.trim();
   if (line.length() == 0) return;
@@ -162,7 +178,7 @@ static void handleCommand(String line) {
     return;
   }
   if (command == 's') {
-    out->printf("status connected=%d wifi=%d control=%d\n", connected, WiFi.status() == WL_CONNECTED, control.connected());
+    out->printf("status connected=%d wifi=%d control=%d %s\n", connected, WiFi.status() == WL_CONNECTED, control.connected(), wifiSummary().c_str());
     return;
   }
   if (!connected) {
@@ -218,7 +234,23 @@ static String htmlEscape(const String& text) {
   return result;
 }
 
+// AP를 켜기 전에 주변 Wi-Fi를 찾는다. 이름을 잘못 치거나(아이폰 이름의 특수문자), 쓸 수 없는 대역을 고르는 일을 막는다.
+static void scanNetworks() {
+  WiFi.mode(WIFI_STA);
+  int count = WiFi.scanNetworks();
+  Serial.printf("setup scan: %d networks\n", count);
+  for (int i = 0; i < count; i++) {
+    String name = WiFi.SSID(i);
+    if (name.length() == 0) continue;
+    String label = name + (WiFi.channel(i) > 14 ? " (5GHz)" : " (2.4GHz)");
+    Serial.printf("  %s ch=%ld rssi=%ld\n", label.c_str(), (long)WiFi.channel(i), (long)WiFi.RSSI(i));
+    networkOptions += "<option value=\"" + htmlEscape(name) + "\"" + (name == wifiName ? " selected" : "") + ">" + htmlEscape(label) + "</option>";
+  }
+  WiFi.scanDelete();
+}
+
 static void startSetupMode() {
+  scanNetworks();
   WiFi.mode(WIFI_AP);
   WiFi.softAP(SETUP_AP_NAME);
   setupServer = new WebServer(80);
@@ -227,10 +259,15 @@ static void startSetupMode() {
       "<!doctype html><meta charset=utf-8><meta name=viewport content='width=device-width'>"
       "<title>Tessync Touch</title><body style='font-family:-apple-system;padding:20px;max-width:420px'>"
       "<h2>Tessync Touch Wi-Fi 설정</h2>"
-      "<p>차에서는 아이폰 핫스팟 이름과 비밀번호를 넣고 서버 주소는 비워두세요. "
-      "공유기는 2.4GHz 이름을 넣으세요(이름에 5G가 붙은 것은 안 됩니다). "
-      "아이폰 핫스팟은 '호환성 최대화'를 켜야 보입니다(ESP32는 2.4GHz만 지원).</p>"
+      "<p>차에서는 아이폰 핫스팟을 고르고 서버 주소는 비워두세요.</p>"
+#if SOC_WIFI_SUPPORT_5G
+      "<p>목록에 핫스팟이 없으면 아이폰의 개인용 핫스팟 화면을 열어둔 채 보드의 RST 버튼을 누르고, 이 Wi-Fi에 다시 접속하세요.</p>"
+#else
+      "<p>이 보드는 2.4GHz만 됩니다. 아이폰 핫스팟은 '호환성 최대화'를 켜야 보입니다.</p>"
+#endif
       "<form method=post action=/save>"
+      "<p>찾은 Wi-Fi<br><select style='width:100%;font-size:17px' onchange=\"if(this.value)this.form.ssid.value=this.value\">"
+      "<option value=''>골라주세요</option>" + networkOptions + "</select></p>"
       "<p>Wi-Fi 이름<br><input name=ssid style='width:100%;font-size:17px' value=\"" + htmlEscape(wifiName) + "\"></p>"
       "<p>비밀번호 (비우면 기존 비밀번호)<br><input name=pass type=password style='width:100%;font-size:17px'></p>"
       "<p>서버 주소 (비우면 핫스팟 아이폰)<br><input name=host style='width:100%;font-size:17px' value=\"" + htmlEscape(serverHost) + "\"></p>"
@@ -265,7 +302,7 @@ static void serviceControl() {
     }
     if (control.connect(target, CONTROL_PORT, 1000)) {
       control.setNoDelay(true);
-      control.printf("hello tessync-touch ble=%d\n", connected);
+      control.printf("hello tessync-touch ble=%d %s\n", connected, wifiSummary().c_str());
       Serial.printf("control connected %s:%d\n", target.toString().c_str(), CONTROL_PORT);
     }
     return;
@@ -301,6 +338,10 @@ static bool needsSetup() {
 }
 
 static void startWiFi() {
+  // 왜 못 붙는지 시리얼 로그로 알 수 있게 한다(201: 못 찾음, 15: 비밀번호 등).
+  WiFi.onEvent([](WiFiEvent_t, WiFiEventInfo_t info) {
+    Serial.printf("wifi disconnected reason=%d\n", info.wifi_sta_disconnected.reason);
+  }, ARDUINO_EVENT_WIFI_STA_DISCONNECTED);
   // BLE와 Wi-Fi를 같이 쓰면 ESP32는 Wi-Fi 절전(modem sleep)을 켜둬야 한다.
   WiFi.mode(WIFI_STA);
   WiFi.setAutoReconnect(true);
@@ -351,7 +392,7 @@ void loop() {
   static wl_status_t lastWiFi = WL_IDLE_STATUS;
   if (WiFi.status() != lastWiFi) {
     lastWiFi = WiFi.status();
-    if (lastWiFi == WL_CONNECTED) Serial.printf("wifi connected %s gateway %s\n", WiFi.localIP().toString().c_str(), WiFi.gatewayIP().toString().c_str());
+    if (lastWiFi == WL_CONNECTED) Serial.printf("wifi connected %s gateway %s %s\n", WiFi.localIP().toString().c_str(), WiFi.gatewayIP().toString().c_str(), wifiSummary().c_str());
   }
 
   // BOOT 버튼: 짧게 누르면 사각형 시험, 3초 누르면 Wi-Fi 설정 모드로 재시작.
