@@ -75,6 +75,10 @@ static int droppedReports = 0;
 
 static const char* SETUP_AP_NAME = "Tessync-Touch-Setup";
 static const uint16_t CONTROL_PORT = 8082;
+// Wi-Fi를 못 찾았을 때 다시 찾는 간격. 쉬지 않고 찾으면 라디오가 그쪽에 묶여 BLE 광고가 안 나간다(C5는 라디오가 하나다).
+// 아이폰 핫스팟은 설정 화면을 벗어나고 붙은 기기가 없으면 잘 안 보이므로 못 찾는 시간이 길 수 있다.
+static const unsigned long WIFI_RETRY_MS = 15000;
+static unsigned long lastWiFiAttempt = 0;
 static Preferences prefs;
 static String wifiName, wifiPassword, serverHost;
 static WebServer* setupServer = nullptr;
@@ -344,8 +348,9 @@ static void startWiFi() {
   }, ARDUINO_EVENT_WIFI_STA_DISCONNECTED);
   // BLE와 Wi-Fi를 같이 쓰면 ESP32는 Wi-Fi 절전(modem sleep)을 켜둬야 한다.
   WiFi.mode(WIFI_STA);
-  WiFi.setAutoReconnect(true);
+  WiFi.setAutoReconnect(false);
   WiFi.begin(wifiName.c_str(), wifiPassword.c_str());
+  lastWiFiAttempt = millis();
   Serial.printf("wifi joining \"%s\", server %s\n", wifiName.c_str(), serverHost.length() ? serverHost.c_str() : "(gateway)");
 }
 
@@ -388,6 +393,10 @@ void setup() {
 void loop() {
   if (setupServer) setupServer->handleClient();
   serviceControl();
+  if (!setupServer && WiFi.status() != WL_CONNECTED && millis() - lastWiFiAttempt > WIFI_RETRY_MS) {
+    lastWiFiAttempt = millis();
+    WiFi.begin(wifiName.c_str(), wifiPassword.c_str());
+  }
   if (activeLink && millis() - lastCommandAt > ACTIVE_HOLD_MS) setLinkSpeed(false);
   static wl_status_t lastWiFi = WL_IDLE_STATUS;
   if (WiFi.status() != lastWiFi) {
