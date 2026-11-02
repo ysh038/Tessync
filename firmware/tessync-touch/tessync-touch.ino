@@ -47,6 +47,17 @@ static uint8_t reportMap[] = {
   0xC0, 0xC0
 };
 
+// BLE 연결 간격(1.25ms 단위). 마우스는 기본으로 아주 짧은 간격(약 15ms)을 써서, 아이폰이 차 스피커로 보내는
+// 블루투스 소리와 경쟁해 소리가 끊겼다(차에서 겪음). 대기 중에는 느리게, 명령이 오면 빠르게 바꾼다.
+// Apple 액세서리 규칙: 최소 간격 >= 15ms, 최소 + 15ms <= 최대, 최대 x (지연 + 1) <= 2초, 감시 시간 2~6초.
+static const uint16_t IDLE_INTERVAL_MIN = 24, IDLE_INTERVAL_MAX = 40, IDLE_LATENCY = 4;  // 30~50ms
+static const uint16_t ACTIVE_INTERVAL_MIN = 12, ACTIVE_INTERVAL_MAX = 24;                // 15~30ms
+static const uint16_t SUPERVISION_TIMEOUT = 400;                                         // 4초
+static const unsigned long ACTIVE_HOLD_MS = 3000;
+static uint16_t connHandle = BLE_HS_CONN_HANDLE_NONE;
+static bool activeLink = false;
+static unsigned long lastCommandAt = 0;
+
 static NimBLEHIDDevice* hid = nullptr;
 static NimBLECharacteristic* input = nullptr;
 static volatile bool connected = false;
@@ -65,16 +76,34 @@ static unsigned long lastHeartbeat = 0;
 // 명령 응답을 보낼 곳. 명령이 들어온 통로로 답한다.
 static Print* out = &Serial;
 
+static void setLinkSpeed(bool active) {
+  if (connHandle == BLE_HS_CONN_HANDLE_NONE) return;
+  activeLink = active;
+  NimBLEServer* server = NimBLEDevice::getServer();
+  if (active) {
+    server->updateConnParams(connHandle, ACTIVE_INTERVAL_MIN, ACTIVE_INTERVAL_MAX, 0, SUPERVISION_TIMEOUT);
+  } else {
+    server->updateConnParams(connHandle, IDLE_INTERVAL_MIN, IDLE_INTERVAL_MAX, IDLE_LATENCY, SUPERVISION_TIMEOUT);
+  }
+}
+
 class ServerCallbacks : public NimBLEServerCallbacks {
   void onConnect(NimBLEServer* server, NimBLEConnInfo& info) override {
+    connHandle = info.getConnHandle();
     Serial.printf("ble connected %s\n", info.getAddress().toString().c_str());
   }
   void onAuthenticationComplete(NimBLEConnInfo& info) override {
     connected = info.isEncrypted();
     Serial.printf("ble paired encrypted=%d\n", connected);
+    if (connected) setLinkSpeed(false);
+  }
+  void onConnParamsUpdate(NimBLEConnInfo& info) override {
+    Serial.printf("ble interval %.1fms latency %d\n", info.getConnInterval() * 1.25f, info.getConnLatency());
   }
   void onDisconnect(NimBLEServer* server, NimBLEConnInfo& info, int reason) override {
     connected = false;
+    connHandle = BLE_HS_CONN_HANDLE_NONE;
+    activeLink = false;
     Serial.printf("ble disconnected reason=%d\n", reason);
   }
 };
@@ -140,6 +169,8 @@ static void handleCommand(String line) {
     out->println("error not connected");
     return;
   }
+  lastCommandAt = millis();
+  if (!activeLink) setLinkSpeed(true);
   switch (command) {
     case 'm': move(a, b); break;
     case 'g': {
@@ -316,6 +347,7 @@ void setup() {
 void loop() {
   if (setupServer) setupServer->handleClient();
   serviceControl();
+  if (activeLink && millis() - lastCommandAt > ACTIVE_HOLD_MS) setLinkSpeed(false);
   static wl_status_t lastWiFi = WL_IDLE_STATUS;
   if (WiFi.status() != lastWiFi) {
     lastWiFi = WiFi.status();
