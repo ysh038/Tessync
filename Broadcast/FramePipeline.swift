@@ -27,6 +27,9 @@ final class FramePipeline {
     private let log: DiagnosticsLog
     /// 축소 프레임마다 인코딩 큐에서 불린다. 터치 조작이 포인터를 찾는 데 쓴다.
     var frameObserver: ((CVPixelBuffer, UInt8) -> Void)?
+    /// 터치 조작 중이면 true. 전송이 밀려 인코딩을 쉬는 동안에도 축소 프레임은 계속 넘긴다.
+    /// 안 그러면 터치 쪽이 예전 화면을 보고 포인터가 안 움직였다고 착각해 계속 움직인다(차에서 실제로 겪음).
+    var observerWantsFrames: (() -> Bool)?
     private let encodeQueue = DispatchQueue(label: "tessync.encode")
     private var monitor: DispatchSourceTimer?
 
@@ -93,17 +96,22 @@ final class FramePipeline {
         let demand = server.frameDemand
         let now = ProcessInfo.processInfo.systemUptime
 
+        let observeOnly = demand == .none && observerWantsFrames?() == true
+
         lock.lock()
-        if demand == .none {
+        if demand == .none, !isRetry {
             // 재시도까지 세면 밀림 비율이 부풀어 화질 단계가 괜히 내려간다.
-            if !isRetry { backpressureInWindow += 1 }
+            backpressureInWindow += 1
+        }
+        if demand == .none, !observeOnly {
             holdTrailing(frame, retryAfter: 0.1)
             lock.unlock()
             return
         }
         let profile = Self.profiles[level]
         // 보는 사람이 없을 때는 새 접속 때 바로 보여줄 프레임만 1초에 한 번 갱신한다.
-        let minInterval = demand == .idle ? 1.0 : 1.0 / profile.fps
+        // 전송이 밀린 채 터치용으로만 축소할 때는 초당 15장이면 충분하다.
+        let minInterval = observeOnly ? 1.0 / 15 : demand == .idle ? 1.0 : 1.0 / profile.fps
         let wait = lastAccepted + minInterval * 0.9 - now
         if busy || wait > 0 {
             holdTrailing(frame, retryAfter: max(wait, 0.02))
@@ -116,6 +124,13 @@ final class FramePipeline {
         lock.unlock()
 
         encodeQueue.async { [self] in
+            if observeOnly {
+                if let scaled = scale(frame.pixelBuffer, profile: profile) {
+                    frameObserver?(scaled, frame.orientation)
+                }
+                finishFrame(encoded: false)
+                return
+            }
             let packet = encode(frame.pixelBuffer, orientation: frame.orientation, timestamp: frame.timestamp, profile: profile)
             if let packet {
                 server.publish(frame: packet)
@@ -155,6 +170,25 @@ final class FramePipeline {
     // MARK: - Encoding (encodeQueue)
 
     private func encode(_ source: CVPixelBuffer, orientation: UInt8, timestamp: CMTime, profile: Profile) -> Data? {
+        guard let scaled = scale(source, profile: profile) else { return nil }
+        frameObserver?(scaled, orientation)
+        let width = CVPixelBufferGetWidth(scaled)
+        let height = CVPixelBufferGetHeight(scaled)
+        if encoder?.width != width || encoder?.height != height {
+            encoder = JPEGEncoder(width: width, height: height, quality: profile.quality)
+            if encoder == nil {
+                if !encoderFailureLogged { log.write("jpeg encoder create failed \(width)x\(height)") }
+                encoderFailureLogged = true
+            } else {
+                log.write("encoder \(width)x\(height) q=\(profile.quality)")
+            }
+        }
+        guard let encoder else { return nil }
+        encoder.quality = profile.quality
+        return encoder.encode(scaled, timestamp: timestamp, header: [1, orientation])
+    }
+
+    private func scale(_ source: CVPixelBuffer, profile: Profile) -> CVPixelBuffer? {
         let width = CVPixelBufferGetWidth(source)
         let height = CVPixelBufferGetHeight(source)
         let scale = min(1, Double(profile.maxSide) / Double(max(width, height)))
@@ -166,19 +200,7 @@ final class FramePipeline {
             scaler = Scaler(width: targetWidth, height: targetHeight, format: CVPixelBufferGetPixelFormatType(source))
             if scaler == nil { log.write("scaler create failed \(targetWidth)x\(targetHeight)") }
         }
-        if encoder?.width != targetWidth || encoder?.height != targetHeight {
-            encoder = JPEGEncoder(width: targetWidth, height: targetHeight, quality: profile.quality)
-            if encoder == nil {
-                if !encoderFailureLogged { log.write("jpeg encoder create failed \(targetWidth)x\(targetHeight)") }
-                encoderFailureLogged = true
-            } else {
-                log.write("encoder \(targetWidth)x\(targetHeight) q=\(profile.quality)")
-            }
-        }
-        guard let scaler, let encoder, let scaled = scaler.scale(source) else { return nil }
-        frameObserver?(scaled, orientation)
-        encoder.quality = profile.quality
-        return encoder.encode(scaled, timestamp: timestamp, header: [1, orientation])
+        return scaler?.scale(source)
     }
 
     private static func orientation(of sampleBuffer: CMSampleBuffer) -> UInt8 {

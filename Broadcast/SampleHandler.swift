@@ -14,6 +14,7 @@ final class SampleHandler: RPBroadcastSampleHandler {
         let touchLink = TouchLink(log: log)
         let touch = TouchController(link: touchLink, log: log)
         pipeline.frameObserver = { [weak touch] buffer, orientation in touch?.observe(frame: buffer, orientation: orientation) }
+        pipeline.observerWantsFrames = { [weak touch] in touch?.isWorking == true }
         server.onTap = { [weak touch] u, v in touch?.tap(u: u, v: v) }
         server.statusProvider = { [weak pipeline, weak touchLink] in
             var status = pipeline?.status() ?? [:]

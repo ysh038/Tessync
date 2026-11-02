@@ -119,16 +119,32 @@ enum PointerFinder {
         return centroid(of: mask, width: width, around: chosen, radius: r + 2)
     }
 
-    /// 포인터를 옆으로 비켜놓기 전후 프레임의 밝기 차이에서 원을 찾는다. 글자, 아이콘 위에서도 된다.
-    /// 차이에는 원래 위치와 비켜놓은 위치 두 곳에 원이 생긴다. movedRight면 왼쪽 원이 원래 위치다.
-    static func findByDifference(before: [UInt8], after: FrameSnapshot, near: CGPoint, window: Int, movedRight: Bool) -> CGPoint? {
+    /// 포인터를 비켜놓기 전후 프레임의 밝기 차이에서 원을 찾는다. 글자, 아이콘 위에서도 된다.
+    /// 차이에는 원래 위치와 비켜놓은 위치 두 곳에 원이 생긴다. 비켜놓은 방향(direction, 프레임 기준)의 뒤쪽 원이 원래 위치다.
+    static func findByDifference(before: [UInt8], after: FrameSnapshot, near: CGPoint, window: Int, direction: CGPoint) -> CGPoint? {
+        let region = CGRect(x: near.x - Double(window), y: near.y - Double(window), width: Double(window * 2), height: Double(window * 2))
+        let peaks = differencePeaks(before: before, after: after, region: region)
+        guard let first = peaks.first else { return nil }
+        if peaks.count == 2 {
+            let along = { (p: CGPoint) in p.x * direction.x + p.y * direction.y }
+            return along(peaks[0]) < along(peaks[1]) ? peaks[0] : peaks[1]
+        }
+        return first
+    }
+
+    /// 두 프레임의 밝기 차이에서 포인터 크기의 원을 최대 2개 찾는다(강한 순). region이 nil이면 프레임 전체.
+    /// 두 번째 원이 첫 번째의 40%보다 약하면(영역 밖으로 나감) 하나만 돌려준다.
+    static func differencePeaks(before: [UInt8], after: FrameSnapshot, region: CGRect?) -> [CGPoint] {
         let width = after.width, height = after.height
-        guard before.count == width * height else { return nil }
-        let x0 = max(0, Int(near.x) - window), x1 = min(width, Int(near.x) + window)
-        let y0 = max(0, Int(near.y) - window), y1 = min(height, Int(near.y) + window)
+        guard before.count == width * height else { return [] }
+        let area = (region ?? CGRect(x: 0, y: 0, width: width, height: height))
+            .intersection(CGRect(x: 0, y: 0, width: width, height: height))
+        guard !area.isNull else { return [] }
+        let x0 = Int(area.minX), x1 = Int(area.maxX)
+        let y0 = Int(area.minY), y1 = Int(area.maxY)
         let w = x1 - x0, h = y1 - y0
         let d = diameter(frameWidth: width)
-        guard w > d, h > d else { return nil }
+        guard w > d, h > d else { return [] }
 
         var diff = [UInt8](repeating: 0, count: w * h)
         for y in 0..<h {
@@ -155,12 +171,11 @@ enum PointerFinder {
             }
         }
         // 원 하나의 30%도 안 바뀌었으면 포인터가 안 움직인 것이다.
-        guard let first = peaks.first, first.score >= d * d * 3 / 10 else { return nil }
+        guard let first = peaks.first, first.score >= d * d * 3 / 10 else { return [] }
         if peaks.count == 2, peaks[1].score * 10 >= first.score * 4 {
-            return movedRight ? (peaks[0].point.x < peaks[1].point.x ? peaks[0].point : peaks[1].point)
-                              : (peaks[0].point.x > peaks[1].point.x ? peaks[0].point : peaks[1].point)
+            return [peaks[0].point, peaks[1].point]
         }
-        return first.point
+        return [first.point]
     }
 
     private static func centroid(of mask: [UInt8], width: Int, around center: CGPoint, radius: Int) -> CGPoint {
