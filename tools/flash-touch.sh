@@ -68,5 +68,17 @@ echo "포트 $PORT, 칩 $CHIP"
 echo "$INFO" | grep -iE "flash size|Chip type|Connected to" || true
 
 compile "$CHIP"
-arduino-cli upload --fqbn "$(fqbn "$CHIP")" --port "$PORT" --input-dir "$SKETCH/bin/$CHIP" "$SKETCH"
+# USB 변환 칩이나 케이블에 따라 높은 속도에서 통신이 끊긴다(C5 + CH340에서 921600 실패). 낮춰 가며 시도한다.
+UPLOADED=""
+for SPEED in 921600 460800 115200; do
+  echo "업로드 속도 $SPEED"
+  if arduino-cli upload --fqbn "$(fqbn "$CHIP"),UploadSpeed=$SPEED" --port "$PORT" --input-dir "$SKETCH/bin/$CHIP" "$SKETCH"; then
+    UPLOADED=1
+    break
+  fi
+done
+if [ -z "$UPLOADED" ]; then
+  echo "업로드 실패. 다른 케이블이나 USB 포트로 해보세요." >&2
+  exit 1
+fi
 echo "완료. 처음 켜면 Wi-Fi 설정 모드입니다: 아이폰에서 Tessync-Touch-Setup에 접속해 http://192.168.4.1"
