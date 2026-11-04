@@ -245,7 +245,7 @@ final class TouchController {
             if a.width == b.width, let p0 = findByColor(in: a, near: lastKnown.map { pixel($0, in: a) }),
                let p1 = findByColor(in: b, near: p0) {
                 let step = CGPoint(x: p1.x - p0.x, y: p1.y - p0.y)
-                if hypot(step.x, step.y) >= 30 * Double(a.width) / Self.referenceWidth {
+                if Self.plausibleWiggle(step, frameWidth: a.width) {
                     sent = ProcessInfo.processInfo.systemUptime
                     _ = link.send("g \(-units) 0 \(Self.wiggleStep)")
                     _ = settledFrame(after: sent)
@@ -268,6 +268,11 @@ final class TouchController {
                 guard let shared = second.first(where: { hypot($0.x - p.x, $0.y - p.y) < near }),
                       let origin = first.first(where: { hypot($0.x - shared.x, $0.y - shared.y) >= near }) else { continue }
                 let step = CGPoint(x: shared.x - origin.x, y: shared.y - origin.y)
+                // 영상처럼 화면이 바뀌면 엉뚱한 변화를 포인터로 잡는다(차에서 32px짜리를 잡아 축을 틀리게 익혔다).
+                guard Self.plausibleWiggle(step, frameWidth: a.width) else {
+                    log.write(String(format: "touch axis: ignored implausible step %.0f,%.0f px", step.x, step.y))
+                    continue
+                }
                 learnColor(in: a, at: origin)
                 setAxis(from: step, sign: sign, orientation: orientation, how: "difference")
                 return ratio(origin, in: a)
@@ -285,6 +290,14 @@ final class TouchController {
         mouseXAxis[orientation] = axis
         log.write(String(format: "touch axis for orientation %d by %@: mouse +x = frame (%.0f,%.0f), step %.0f,%.0f px",
                          orientation, how, axis.x, axis.y, step.x, step.y))
+    }
+
+    /// 비켜놓기 한 번(120을 20씩)의 이동 거리로 그럴듯한지. 실측 약 73px(590px 프레임), 가속 차이를 감안해 넓게 본다.
+    private static func plausibleWiggle(_ step: CGPoint, frameWidth: Int) -> Bool {
+        let distance = hypot(step.x, step.y) * referenceWidth / Double(frameWidth)
+        // 회전은 90도 단위라 한 축으로만 움직여야 한다.
+        let straight = min(abs(step.x), abs(step.y)) <= 0.3 * max(abs(step.x), abs(step.y))
+        return distance >= 45 && distance <= 130 && straight
     }
 
     /// 화면을 회전하는 앱이라고 보고 orientation으로 추정한 마우스 +x 축.
