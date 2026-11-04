@@ -52,6 +52,18 @@ struct FrameSnapshot {
     }
 }
 
+/// 포인터가 프레임에서 보이는 색(YUV). 반투명이라 배경에 따라 다르다.
+struct PointerColor {
+    let y: Int
+    let cb: Int
+    let cr: Int
+
+    /// 밝은 화면에서 실측한 값(RGB 약 148,149,151).
+    static func light(fullRange: Bool) -> PointerColor {
+        PointerColor(y: fullRange ? 149 : 144, cb: 128, cr: 128)
+    }
+}
+
 /// AssistiveTouch 포인터(회색 원)를 프레임에서 찾는다. 좌표는 프레임 픽셀.
 ///
 /// 실측(590x1280 프레임): 포인터는 RGB 약 (148,149,151), 지름 약 27px. 크기는 프레임 너비에 비례시킨다.
@@ -62,9 +74,10 @@ enum PointerFinder {
 
     /// 밝은 배경 위의 포인터를 색과 크기로 찾는다. 글자, 아이콘 위에 겹치면 못 찾는다.
     /// 비슷한 회색 원(AssistiveTouch 버튼 등)도 걸리므로 near가 있으면 그에 가장 가까운 후보를 고른다.
-    static func findByColor(in frame: FrameSnapshot, near: CGPoint?) -> CGPoint? {
+    static func findByColor(in frame: FrameSnapshot, near: CGPoint?, color: PointerColor? = nil) -> CGPoint? {
         let width = frame.width, height = frame.height
-        let pointerY = frame.fullRange ? 149 : 144
+        let target = color ?? .light(fullRange: frame.fullRange)
+        let pointerY = target.y
         var mask = [UInt8](repeating: 0, count: width * height)
         for y in 0..<height {
             let chromaRow = (y / 2) * (width / 2) * 2
@@ -72,7 +85,7 @@ enum PointerFinder {
                 let luma = Int(frame.luma[y * width + x])
                 guard abs(luma - pointerY) <= 12 else { continue }
                 let c = chromaRow + (x / 2) * 2
-                if abs(Int(frame.chroma[c]) - 128) <= 6, abs(Int(frame.chroma[c + 1]) - 128) <= 6 {
+                if abs(Int(frame.chroma[c]) - target.cb) <= 6, abs(Int(frame.chroma[c + 1]) - target.cr) <= 6 {
                     mask[y * width + x] = 1
                 }
             }
@@ -117,6 +130,30 @@ enum PointerFinder {
         }
         guard let chosen else { return nil }
         return centroid(of: mask, width: width, around: chosen, radius: r + 2)
+    }
+
+    /// 찾은 포인터 자리의 색을 잰다. 포인터 안쪽이 고르게 한 색일 때만(단색 배경 위) 돌려준다.
+    /// 다크 모드에서는 포인터가 밝은 화면과 다른 색으로 보여 기본값으로는 못 찾는다(차에서 겪음).
+    static func sampleColor(in frame: FrameSnapshot, at center: CGPoint) -> PointerColor? {
+        let r = max(2, diameter(frameWidth: frame.width) / 4)
+        let cx = Int(center.x), cy = Int(center.y)
+        guard cx - r >= 0, cy - r >= 0, cx + r < frame.width, cy + r < frame.height else { return nil }
+        var lumas: [Int] = []
+        var cbSum = 0, crSum = 0
+        for y in (cy - r)...(cy + r) {
+            for x in (cx - r)...(cx + r) {
+                lumas.append(Int(frame.luma[y * frame.width + x]))
+                let c = (y / 2) * (frame.width / 2) * 2 + (x / 2) * 2
+                cbSum += Int(frame.chroma[c])
+                crSum += Int(frame.chroma[c + 1])
+            }
+        }
+        let mean = lumas.reduce(0, +) / lumas.count
+        let deviation = lumas.map { abs($0 - mean) }.reduce(0, +) / lumas.count
+        let cb = cbSum / lumas.count, cr = crSum / lumas.count
+        // 글자가 비치거나 색이 있는 배경이면 쓰지 않는다. 포인터는 무채색이다.
+        guard deviation <= 4, abs(cb - 128) <= 12, abs(cr - 128) <= 12 else { return nil }
+        return PointerColor(y: mean, cb: cb, cr: cr)
     }
 
     /// 포인터를 비켜놓기 전후 프레임의 밝기 차이에서 원을 찾는다. 글자, 아이콘 위에서도 된다.

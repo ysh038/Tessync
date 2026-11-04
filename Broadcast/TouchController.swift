@@ -50,6 +50,8 @@ final class TouchController {
     /// 세로 화면을 회전하지 않는 앱도 있어서 orientation만으로는 알 수 없다. 처음 한 번 움직여 보고 정한다.
     private var mouseXAxis: [UInt8: CGPoint] = [1: CGPoint(x: 1, y: 0)]
     private var deadline: TimeInterval = 0
+    /// 비켜놓기로 찾은 자리에서 잰 포인터 색. 다크 모드처럼 기본 색으로 못 찾을 때 쓴다.
+    private var learnedColor: PointerColor?
 
     init(link: TouchLink, log: DiagnosticsLog) {
         self.link = link
@@ -156,7 +158,7 @@ final class TouchController {
             let expectedPx = pixel(expected, in: after)
             // 크게(특히 대각선으로) 움직이면 예상의 75%만 가기도 한다. 이동 거리에 비례해 오차를 허용한다.
             let slack = max(110, 0.4 * max(abs(dx), abs(dy))) * afterScale
-            if let found = PointerFinder.findByColor(in: after, near: expectedPx),
+            if let found = findByColor(in: after, near: expectedPx),
                abs(found.x - expectedPx.x) <= slack, abs(found.y - expectedPx.y) <= slack {
                 position = ratio(found, in: after)
             } else if let found = wiggleLocate(near: expected, window: slack, orientation: orientation) {
@@ -173,7 +175,7 @@ final class TouchController {
     /// 출발 위치(0~1): 색으로 바로 보이면 그것, 아니면 마지막 위치에서 비켜놓기, 그래도 없으면 모서리 원점.
     private func locateStart(orientation: UInt8) -> CGPoint? {
         guard let frame = snapshot() else { return nil }
-        if let found = PointerFinder.findByColor(in: frame, near: lastKnown.map { pixel($0, in: frame) }) {
+        if let found = findByColor(in: frame, near: lastKnown.map { pixel($0, in: frame) }) {
             return ratio(found, in: frame)
         }
         let scale = Double(frame.width) / Self.referenceWidth
@@ -184,10 +186,29 @@ final class TouchController {
         let sent = ProcessInfo.processInfo.systemUptime
         guard link.send("h") != nil, link.send("m 40 40") != nil, let after = settledFrame(after: sent) else { return nil }
         let corner = frameCorner(orientation: orientation)
-        if let found = PointerFinder.findByColor(in: after, near: pixel(corner, in: after)) {
+        if let found = findByColor(in: after, near: pixel(corner, in: after)) {
             return ratio(found, in: after)
         }
         return wiggleLocate(near: corner, window: 160 * Double(after.width) / Self.referenceWidth, orientation: orientation)
+    }
+
+    /// 배운 색으로 먼저 찾고, 없으면 밝은 화면 기본 색으로 찾는다.
+    private func findByColor(in frame: FrameSnapshot, near: CGPoint?) -> CGPoint? {
+        if let learnedColor, let found = PointerFinder.findByColor(in: frame, near: near, color: learnedColor) {
+            return found
+        }
+        return PointerFinder.findByColor(in: frame, near: near)
+    }
+
+    private func learnColor(in frame: FrameSnapshot, at point: CGPoint) {
+        guard let color = PointerFinder.sampleColor(in: frame, at: point) else { return }
+        let light = PointerColor.light(fullRange: frame.fullRange)
+        // 기본 색과 같으면 배울 필요가 없다.
+        guard abs(color.y - light.y) > 8 || abs(color.cb - light.cb) > 4 || abs(color.cr - light.cr) > 4 else { return }
+        if learnedColor.map({ abs($0.y - color.y) > 4 }) ?? true {
+            log.write("touch pointer color learned y=\(color.y) cb=\(color.cb) cr=\(color.cr)")
+        }
+        learnedColor = color
     }
 
     /// 마우스 좌표 (-,-) 쪽 모서리에서 조금 들어온 곳(0~1).
@@ -232,6 +253,7 @@ final class TouchController {
                 var axis = abs(step.x) >= abs(step.y) ? CGPoint(x: step.x > 0 ? 1 : -1, y: 0) : CGPoint(x: 0, y: step.y > 0 ? 1 : -1)
                 if sign < 0 { axis = CGPoint(x: -axis.x, y: -axis.y) }
                 mouseXAxis[orientation] = axis
+                learnColor(in: a, at: origin)
                 log.write(String(format: "touch axis for orientation %d: mouse +x = frame (%.0f,%.0f), step %.0f,%.0f px",
                                  orientation, axis.x, axis.y, step.x, step.y))
                 return ratio(origin, in: a)
@@ -261,6 +283,7 @@ final class TouchController {
         let direction = positive ? axis : CGPoint(x: -axis.x, y: -axis.y)
         guard let found = PointerFinder.findByDifference(before: before.luma, after: moved, near: nearPx,
                                                          window: Int(window), direction: direction) else { return nil }
+        learnColor(in: before, at: found)
         return ratio(found, in: moved)
     }
 
