@@ -120,7 +120,7 @@ final class TouchController {
         func fail(_ reason: String) {
             // 어디 있는지 확신할 수 없으니 다음에는 처음부터 찾는다.
             lastKnown = nil
-            log.write(String(format: "tap %.2f,%.2f failed: %@ (%.2fs)", target.x, target.y, reason,
+            log.write(String(format: "tap %.2f,%.2f o=%d failed: %@ (%.2fs)", target.x, target.y, orientation, reason,
                              ProcessInfo.processInfo.systemUptime - started))
         }
 
@@ -128,7 +128,14 @@ final class TouchController {
         if mouseXAxis[orientation] == nil {
             // 이 화면 방향은 처음이다. 움직여 보며 축을 정하고, 그 과정에서 포인터 위치도 얻는다.
             start = calibrateAxis(orientation: orientation)
-            if start == nil { return fail("could not learn pointer direction (orientation \(orientation))") }
+            if start == nil {
+                // 화면이 계속 바뀌면(영상) 익히기에 실패한다. 화면 회전으로 추정하고 진행한다.
+                // 틀렸으면 폐루프가 수렴하지 않아 클릭하지 않고 끝난다.
+                let guess = Self.guessedMouseXAxis(orientation: orientation)
+                mouseXAxis[orientation] = guess
+                log.write(String(format: "touch axis for orientation %d guessed: mouse +x = frame (%.0f,%.0f)",
+                                 orientation, guess.x, guess.y))
+            }
         }
         guard var position = start ?? locateStart(orientation: orientation) else { return fail("pointer not found") }
 
@@ -141,7 +148,7 @@ final class TouchController {
             if abs(dx) <= Self.tolerancePx, abs(dy) <= Self.tolerancePx {
                 lastKnown = position
                 guard link.send("c")?.hasPrefix("ok") == true else { return fail("click not acknowledged") }
-                log.write(String(format: "tap %.2f,%.2f clicked rounds=%d %.2fs", target.x, target.y, round,
+                log.write(String(format: "tap %.2f,%.2f o=%d clicked rounds=%d %.2fs", target.x, target.y, orientation, round,
                                  ProcessInfo.processInfo.systemUptime - started))
                 return
             }
@@ -234,6 +241,18 @@ final class TouchController {
             let units = sign * Self.wiggleUnits
             var sent = ProcessInfo.processInfo.systemUptime
             guard link.send("g \(units) 0 \(Self.wiggleStep)") != nil, let b = settledFrame(after: sent) else { continue }
+            // 색으로 이동 전후 위치가 보이면 그것으로 정한다. 영상처럼 화면 전체가 바뀌어도 된다.
+            if a.width == b.width, let p0 = findByColor(in: a, near: lastKnown.map { pixel($0, in: a) }),
+               let p1 = findByColor(in: b, near: p0) {
+                let step = CGPoint(x: p1.x - p0.x, y: p1.y - p0.y)
+                if hypot(step.x, step.y) >= 30 * Double(a.width) / Self.referenceWidth {
+                    sent = ProcessInfo.processInfo.systemUptime
+                    _ = link.send("g \(-units) 0 \(Self.wiggleStep)")
+                    _ = settledFrame(after: sent)
+                    setAxis(from: step, sign: sign, orientation: orientation, how: "color")
+                    return ratio(p0, in: a)
+                }
+            }
             sent = ProcessInfo.processInfo.systemUptime
             guard link.send("g \(units) 0 \(Self.wiggleStep)") != nil, let c = settledFrame(after: sent) else { continue }
             sent = ProcessInfo.processInfo.systemUptime
@@ -249,13 +268,8 @@ final class TouchController {
                 guard let shared = second.first(where: { hypot($0.x - p.x, $0.y - p.y) < near }),
                       let origin = first.first(where: { hypot($0.x - shared.x, $0.y - shared.y) >= near }) else { continue }
                 let step = CGPoint(x: shared.x - origin.x, y: shared.y - origin.y)
-                // 축 방향 하나로 맞춘다(회전은 90도 단위).
-                var axis = abs(step.x) >= abs(step.y) ? CGPoint(x: step.x > 0 ? 1 : -1, y: 0) : CGPoint(x: 0, y: step.y > 0 ? 1 : -1)
-                if sign < 0 { axis = CGPoint(x: -axis.x, y: -axis.y) }
-                mouseXAxis[orientation] = axis
                 learnColor(in: a, at: origin)
-                log.write(String(format: "touch axis for orientation %d: mouse +x = frame (%.0f,%.0f), step %.0f,%.0f px",
-                                 orientation, axis.x, axis.y, step.x, step.y))
+                setAxis(from: step, sign: sign, orientation: orientation, how: "difference")
                 return ratio(origin, in: a)
             }
             // 화면 끝에 막혀 안 움직였을 수 있다. 반대 방향으로 한 번 더 해본다.
@@ -264,6 +278,26 @@ final class TouchController {
     }
 
     /// 비켜놓기로 포인터를 찾는다. near, 결과 모두 0~1. window는 프레임 픽셀.
+    /// 마우스 ±x 이동으로 생긴 프레임 이동(step)에서 마우스 +x 축을 정한다. 회전은 90도 단위라 축 하나로 맞춘다.
+    private func setAxis(from step: CGPoint, sign: Int, orientation: UInt8, how: String) {
+        var axis = abs(step.x) >= abs(step.y) ? CGPoint(x: step.x > 0 ? 1 : -1, y: 0) : CGPoint(x: 0, y: step.y > 0 ? 1 : -1)
+        if sign < 0 { axis = CGPoint(x: -axis.x, y: -axis.y) }
+        mouseXAxis[orientation] = axis
+        log.write(String(format: "touch axis for orientation %d by %@: mouse +x = frame (%.0f,%.0f), step %.0f,%.0f px",
+                         orientation, how, axis.x, axis.y, step.x, step.y))
+    }
+
+    /// 화면을 회전하는 앱이라고 보고 orientation으로 추정한 마우스 +x 축.
+    /// 플레이어(web/player.js rotationFor)가 화면을 돌리는 방향의 반대로 프레임 축을 돌린 것이다(6: -90도, 8: +90도, 3: 180도).
+    private static func guessedMouseXAxis(orientation: UInt8) -> CGPoint {
+        switch orientation {
+        case 3, 4: return CGPoint(x: -1, y: 0)
+        case 5, 6: return CGPoint(x: 0, y: 1)
+        case 7, 8: return CGPoint(x: 0, y: -1)
+        default: return CGPoint(x: 1, y: 0)
+        }
+    }
+
     private func wiggleLocate(near point: CGPoint, window: Double, orientation: UInt8) -> CGPoint? {
         guard let before = snapshot() else { return nil }
         let axis = axes(for: orientation).x
